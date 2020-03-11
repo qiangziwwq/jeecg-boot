@@ -1,7 +1,7 @@
 <template>
   <a-card :bordered="false" style="height: 100%">
     <div class="table-page-search-wrapper">
-      <a-form layout="inline">
+      <a-form layout="inline" @keyup.enter.native="searchByquery">
         <a-row :gutter="24" v-if="queryInfo && queryInfo.length>0">
           <template v-for="(item,index) in queryInfo">
             <template v-if=" item.hidden==='1' ">
@@ -40,16 +40,15 @@
     <!-- 操作按钮区域 -->
     <div class="table-operator">
       <a-button v-if="buttonSwitch.add" @click="handleAdd" type="primary" icon="plus">新增</a-button>
-      <a-button v-if="buttonSwitch.import" @click="handleImportXls" type="primary" icon="upload" style="margin-left:8px">导入</a-button>
-      <a-button v-if="buttonSwitch.export" @click="handleExportXls" type="primary" icon="download" style="margin-left:8px">导出</a-button>
+      <a-button v-if="buttonSwitch.import" @click="handleImportXls" type="primary" icon="upload">导入</a-button>
+      <a-button v-if="buttonSwitch.export" @click="handleExportXls" type="primary" icon="download">导出</a-button>
       <template v-if="cgButtonList && cgButtonList.length>0" v-for="(item,index) in cgButtonList">
         <a-button
           v-if=" item.optType=='js' "
           :key=" 'cgbtn'+index "
           @click="cgButtonJsHandler(item.buttonCode)"
           type="primary"
-          :icon="item.buttonIcon"
-          style="margin-left:8px">
+          :icon="item.buttonIcon">
           {{ item.buttonName }}
         </a-button>
         <a-button
@@ -57,16 +56,22 @@
           :key=" 'cgbtn'+index "
           @click="cgButtonActionHandler(item.buttonCode)"
           type="primary"
-          :icon="item.buttonIcon"
-          style="margin-left:8px">
+          :icon="item.buttonIcon">
           {{ item.buttonName }}
         </a-button>
       </template>
 
+      <!-- 高级查询 -->
+      <j-super-query
+        ref="superQuery"
+        :fieldList="superQuery.fieldList"
+        :saveCode="$route.fullPath"
+        :loading="table.loading"
+        @handleSuperQuery="handleSuperQuery"/>
+
       <a-button
         v-if="buttonSwitch.batch_delete"
         @click="handleDelBatch"
-        style="margin-left:8px"
         v-show="table.selectedRowKeys.length > 0"
         ghost
         type="primary"
@@ -89,9 +94,20 @@
         :dataSource="table.dataSource"
         :pagination="table.pagination"
         :loading="table.loading"
-        :rowSelection="{selectedRowKeys:table.selectedRowKeys, onChange: handleChangeInTableSelect}"
+        :rowSelection="rowSelectionConfig"
         @change="handleTableChange"
+        :scroll="table.scroll"
         style="min-height: 300px">
+
+        <!-- 支持链接href跳转 -->
+        <template
+          v-for="field of fieldHrefSlots"
+          :slot="field.slotName"
+          slot-scope="text, record"
+        >
+          <a @click="handleClickFieldHref(field,record)">{{ text }}</a>
+        </template>
+
 
         <template slot="dateSlot" slot-scope="text">
           <span>{{ getFormatDate(text) }}</span>
@@ -102,19 +118,19 @@
         </template>
 
         <template slot="imgSlot" slot-scope="text">
-          <span v-if="!text" style="font-size: 12px;font-style: italic;">无此图片</span>
+          <span v-if="!text" style="font-size: 12px;font-style: italic;">无图片</span>
           <img v-else :src="getImgView(text)" height="25px" alt="图片不存在" style="max-width:80px;font-size: 12px;font-style: italic;"/>
         </template>
 
         <template slot="fileSlot" slot-scope="text">
-          <span v-if="!text" style="font-size: 12px;font-style: italic;">无此文件</span>
+          <span v-if="!text" style="font-size: 12px;font-style: italic;">无文件</span>
           <a-button
             v-else
             :ghost="true"
             type="primary"
             icon="download"
             size="small"
-            @click="uploadFile(text)">
+            @click="downloadRowFile(text)">
             下载
           </a-button>
         </template>
@@ -139,10 +155,17 @@
               更多 <a-icon type="down" />
             </a>
             <a-menu slot="overlay">
-              <a-menu-item >
+              <a-menu-item v-if="buttonSwitch.detail">
                 <a href="javascript:;" @click="handleDetail(record)">详情</a>
               </a-menu-item>
               <template v-if="hasBpmStatus">
+                <template v-if="record.bpm_status == '1'||record.bpm_status == ''|| record.bpm_status == null">
+                    <a-menu-item v-if="buttonSwitch.delete">
+                      <a-popconfirm title="确定删除吗?" @confirm="() => handleDeleteOne(record)">
+                        <a>删除</a>
+                      </a-popconfirm>
+                    </a-menu-item>
+                </template>
               </template>
               <template v-else>
                 <a-menu-item v-if="buttonSwitch.delete">
@@ -152,7 +175,7 @@
                 </a-menu-item>
                </template>
               <template v-if="cgButtonLinkList && cgButtonLinkList.length>0" v-for="(btnItem,btnIndex) in cgButtonLinkList">
-                <a-menu-item :key=" 'cgbtnLink'+btnIndex ">
+                <a-menu-item :key=" 'cgbtnLink'+btnIndex " v-if="showLinkButton(btnItem,record)">
                   <a href="javascript:void(0);" @click="cgButtonLinkHandler(record,btnItem.buttonCode,btnItem.optType)">
                     <a-icon v-if="btnItem.buttonIcon" :type="btnItem.buttonIcon" />
                     {{ btnItem.buttonName }}
@@ -165,9 +188,14 @@
         </span>
       </a-table>
 
-      <OnlCgformAutoModal @success="handleFormSuccess" ref="modal" :code="code"></OnlCgformAutoModal>
+      <onl-cgform-auto-modal @success="handleFormSuccess" ref="modal" :code="code" @schema="handleGetSchema" />
 
       <j-import-modal ref="importModal" :url="getImportUrl()" @ok="importOk"></j-import-modal>
+
+      <!-- 跳转Href的动态组件方式 -->
+      <a-modal v-bind="hrefComponent.model" v-on="hrefComponent.on">
+        <component :is="hrefComponent.is" v-bind="hrefComponent.params"/>
+      </a-modal>
 
     </div>
   </a-card>
@@ -175,15 +203,20 @@
 
 <script>
 
+  import { HrefJump } from '@/mixins/OnlAutoListMixin'
   import { postAction,getAction,deleteAction,downFile } from '@/api/manage'
   import { filterMultiDictText } from '@/components/dict/JDictSelectUtil'
-  import { filterObj } from '@/utils/util';
+  import { cloneObject, filterObj } from '@/utils/util'
   import JImportModal from '@/components/jeecg/JImportModal'
+  import JSuperQuery from '@comp/jeecg/JSuperQuery'
+  import ButtonExpHandler from './ButtonExpHandler'
 
   export default {
     name: 'OnlCgFormAutoList',
+    mixins: [HrefJump],
     components: {
-      JImportModal
+      JSuperQuery,
+      JImportModal,
     },
     data() {
       return {
@@ -210,12 +243,12 @@
         cgButtonLinkList:[],
         cgButtonList:[],
         queryInfo:[],
-        queryParam:{
-
-        },
+        // 查询参数，多个页面的查询参数用 code 作为键来区分
+        queryParamsMap: {},
         toggleSearchStatus:false,
         table: {
           loading: true,
+          scroll:{x:false},
           // 表头
           columns: [],
           //数据集
@@ -225,16 +258,19 @@
           selectionRows: [],
           // 分页参数
           pagination: {
-             current: 1,
-             pageSize: 10,
-             pageSizeOptions: ['10', '20', '30'],
-             showTotal: (total, range) => {
-               return range[0] + '-' + range[1] + ' 共' + total + '条'
-             },
-             showQuickJumper: true,
-             showSizeChanger: true,
-             total: 0
+
           }
+        },
+        metaPagination:{
+          current: 1,
+          pageSize: 10,
+          pageSizeOptions: ['10', '20', '30'],
+          showTotal: (total, range) => {
+            return range[0] + '-' + range[1] + ' 共' + total + '条'
+          },
+          showQuickJumper: true,
+          showSizeChanger: true,
+          total: 0
         },
         actionColumn:{
           title: '操作',
@@ -253,9 +289,20 @@
           delete:true,
           batch_delete:true,
           import:true,
-          export:true
+          export:true,
+          detail:true
         },
         hasBpmStatus:false,
+        checkboxFlag:false,
+        // 高级查询
+        superQuery: {
+          // 字段列表
+          fieldList: [],
+          // 查询参数
+          params: '',
+          // 查询条件拼接方式 'and' or 'or'
+          matchType: 'and'
+        }
       }
     },
     created() {
@@ -268,6 +315,26 @@
       '$route'() {
         // 刷新参数放到这里去触发，就可以刷新相同界面了
         this.initAutoList()
+      }
+    },
+    computed:{
+      rowSelectionConfig:function() {
+        if(!this.checkboxFlag){
+          return null
+        }
+        return {
+          fixed:true,
+          selectedRowKeys:this.table.selectedRowKeys,
+          onChange: this.handleChangeInTableSelect
+        }
+      },
+      queryParam: {
+        get() {
+          return this.queryParamsMap[this.code]
+        },
+        set(newVal) {
+          this.$set(this.queryParamsMap, this.code, newVal)
+        }
       }
     },
     methods: {
@@ -297,11 +364,33 @@
         if(!this.$route.params.code){
           return false
         }
+        // 清空高级查询条件
+        this.superQuery.params = ''
+        if (this.$refs.superQuery) {
+          this.$refs.superQuery.handleReset()
+        }
+
         this.table.loading = true
         this.code = this.$route.params.code
+        if (!this.queryParam) {
+          this.queryParam = {}
+        }
         getAction(`${this.url.getColumns}${this.code}`).then((res)=>{
           console.log("--onlineList-加载动态列>>",res);
           if(res.success){
+            if(res.result.checkboxFlag == 'Y'){
+              this.checkboxFlag = true
+            }else{
+              this.checkboxFlag = false
+            }
+
+            if(res.result.paginationFlag=='Y'){
+              this.table.pagination = {...this.metaPagination}
+            }else{
+              this.table.pagination = false
+            }
+
+            this.fieldHrefSlots = res.result.fieldHrefSlots
             this.dictOptions = res.result.dictOptions
             this.formTemplate = res.result.formTemplate
             this.description = res.result.description
@@ -313,42 +402,83 @@
             for(let a=0;a<currColumns.length;a++){
               if(currColumns[a].customRender){
                 let dictCode = currColumns[a].customRender;
-                currColumns[a].customRender=(text)=>{
-                  return filterMultiDictText(this.dictOptions[dictCode], text);
+                let replaceFlag = '_replace_text_';
+                if(dictCode.startsWith(replaceFlag)){
+                  let textFieldName = dictCode.replace(replaceFlag,'')
+                  currColumns[a].customRender=(text,record)=>{
+                    return record[textFieldName]
+                  }
+                }else{
+                  currColumns[a].customRender=(text)=>{
+                    return filterMultiDictText(this.dictOptions[dictCode], text);
+                  }
                 }
               }
+            }
+            if(res.result.scrollFlag==1){
+              this.table.scroll = { x :'115%' }
+            }else{
+              this.table.scroll = { x :false }
             }
             currColumns.push(this.actionColumn);
             this.table.columns = [...currColumns]
             this.hasBpmStatusFilter();
             this.loadData();
             this.initQueryInfo();
+            //加载新路由，清空checkbox选中
+            this.table.selectedRowKeys = [];
           }else{
             this.$message.warning(res.message)
           }
         })
       },
       loadData(arg){
-        if(arg==1){
-          this.table.pagination.current=1
+        if(this.table.pagination){
+          if(arg==1){
+            this.table.pagination.current=1
+          }
+          this.table.loading = true
+          let params = this.getQueryParams();//查询条件
+          console.log("--onlineList-查询条件-->",params)
+          getAction(`${this.url.getData}${this.code}`,params).then((res)=>{
+            console.log("--onlineList-列表数据",res)
+            if(res.success){
+              let result = res.result;
+              if(Number(result.total)>0){
+                this.table.pagination.total = Number(result.total)
+                this.table.dataSource = result.records
+              }else{
+                this.table.pagination.total=0;
+                this.table.dataSource=[]
+                //this.$message.warning("查无数据")
+              }
+            }else{
+              this.$message.warning(res.message)
+            }
+          }).finally(() => {
+            this.table.loading = false
+          })
+        }else{
+          this.loadDataNoPage()
         }
-        let params = this.getQueryParams();//查询条件
-        console.log("--onlineList-查询条件-->",params)
-        getAction(`${this.url.getData}${this.code}`,params).then((res)=>{
+      },
+      loadDataNoPage(){
+        this.table.loading = true
+        let param = this.getQueryParams()//查询条件
+        param['pageSize'] = -521;
+        getAction(`${this.url.getData}${this.code}`,filterObj(param)).then((res)=>{
           console.log("--onlineList-列表数据",res)
           if(res.success){
             let result = res.result;
             if(Number(result.total)>0){
-              this.table.pagination.total = Number(result.total)
               this.table.dataSource = result.records
             }else{
-              this.table.pagination.total=0;
               this.table.dataSource=[]
-              //this.$message.warning("查无数据")
             }
           }else{
             this.$message.warning(res.message)
           }
+        }).finally(() => {
           this.table.loading = false
         })
       },
@@ -356,11 +486,14 @@
         let param = Object.assign({}, this.queryParam,this.isorter);
         param.pageNo = this.table.pagination.current;
         param.pageSize = this.table.pagination.pageSize;
+        param.superQueryMatchType = this.superQuery.matchType
+        param.superQueryParams = encodeURIComponent(this.superQuery.params)
         return filterObj(param);
       },
       handleChangeInTableSelect(selectedRowKeys, selectionRows) {
         this.table.selectedRowKeys = selectedRowKeys
         this.table.selectionRows = selectionRows
+        this.selectedRowKeys = selectedRowKeys
       },
       handleTableChange(pagination, filters, sorter){
         //TODO 筛选
@@ -422,6 +555,10 @@
         this.cgButtonLinkHandler(record,"beforeEdit","js")
         this.$refs.modal.edit(this.formTemplate,record.id);
       },
+      showLinkButton(item,record){
+        let btn = new ButtonExpHandler(item.exp,record);
+        return btn.show;
+      },
       handleDetail(record){
         this.$refs.modal.detail(this.formTemplate,record.id);
       },
@@ -443,6 +580,61 @@
       handleFormSuccess(){
         this.loadData()
       },
+      // 查询完 schema 后，生成高级查询的字段列表
+      handleGetSchema(schema) {
+        if (schema && schema.properties) {
+          let setField = (array, field) => {
+            let type = field.type || 'string'
+            type = (type === 'inputNumber' ? 'number' : type)
+            array.push({
+              type: type,
+              value: field.key,
+              text: field.title,
+              // 额外字典参数
+              dictCode: field.dictCode,
+              dictTable: field.dictTable,
+              dictText: field.dictText,
+              options: field.enum || field.options,
+              order: field.order,
+            })
+          }
+          let fieldList = []
+          for (let key in schema.properties) {
+            if (!schema.properties.hasOwnProperty(key)) {
+              continue
+            }
+            let field = schema.properties[key]
+            // tab = 子表
+            if (field.view === 'tab') {
+              let subTable = {
+                type: 'sub-table',
+                value: field.key,
+                text: field.describe,
+                children: []
+              }
+              for (let column of field.columns) {
+                setField(subTable.children, column)
+              }
+              fieldList.push(subTable)
+            } else {
+              field.key = key
+              setField(fieldList, field)
+            }
+          }
+          // 冒泡排序
+          for (let i = 0; i < fieldList.length; i++) {
+            for (let j = i + 1; j < fieldList.length; j++) {
+              let temp1 = fieldList[i]
+              let temp2 = fieldList[j]
+              if (temp1.order > temp2.order) {
+                fieldList[i] = temp2
+                fieldList[j] = temp1
+              }
+            }
+          }
+          this.superQuery.fieldList = fieldList
+        }
+      },
       onClearSelected(){
         this.table.selectedRowKeys = []
         this.table.selectionRows = []
@@ -451,9 +643,9 @@
         if(text && text.indexOf(",")>0){
           text = text.substring(0,text.indexOf(","))
         }
-        return window._CONFIG['imgDomainURL']+"/"+text
+        return window._CONFIG['staticDomainURL']+"/"+text
       },
-      uploadFile(text){
+      downloadRowFile(text){
         if(!text){
           this.$message.warning("未知的文件")
           return;
@@ -461,7 +653,7 @@
         if(text.indexOf(",")>0){
           text = text.substring(0,text.indexOf(","))
         }
-        window.open(window._CONFIG['imgDomainURL']+"/"+text);//TODO 下载的方法
+        window.open(window._CONFIG['staticDomainURL']+"/"+text);//TODO 下载的方法
       },
       handleDelBatch(){
         if(this.table.selectedRowKeys.length<=0){
@@ -587,19 +779,35 @@
         }
       },
       initButtonSwitch(hideColumns){
+        Object.keys(this.buttonSwitch).forEach(key=>{
+          this.buttonSwitch[key]=true
+        })
         if(hideColumns && hideColumns.length>0){
           Object.keys(this.buttonSwitch).forEach(key=>{
             if(hideColumns.indexOf(key)>=0){
               this.buttonSwitch[key]=false
             }
           })
-
         }
-      }
+      },
+
+      // 高级查询
+      handleSuperQuery(params, matchType) {
+        if (!params || params.length === 0) {
+          this.superQuery.params = ''
+        } else {
+          this.superQuery.params = JSON.stringify(params)
+        }
+        this.superQuery.matchType = matchType
+        this.loadData()
+      },
 
     }
   }
 </script>
+<style scoped>
+  @import '~@assets/less/common.less';
+</style>
 <style>
   .ant-card-body .table-operator{
     margin-bottom: 18px;

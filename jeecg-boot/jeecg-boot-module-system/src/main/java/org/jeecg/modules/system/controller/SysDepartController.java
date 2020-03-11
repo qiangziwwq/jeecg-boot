@@ -14,9 +14,11 @@ import org.apache.shiro.SecurityUtils;
 import org.apache.shiro.authz.annotation.RequiresRoles;
 import org.jeecg.common.api.vo.Result;
 import org.jeecg.common.constant.CacheConstant;
+import org.jeecg.common.constant.CommonConstant;
 import org.jeecg.common.system.query.QueryGenerator;
 import org.jeecg.common.system.util.JwtUtil;
 import org.jeecg.common.system.vo.LoginUser;
+import org.jeecg.common.util.oConvertUtils;
 import org.jeecg.modules.system.entity.SysDepart;
 import org.jeecg.modules.system.model.DepartIdModel;
 import org.jeecg.modules.system.model.SysDepartTreeModel;
@@ -59,6 +61,31 @@ public class SysDepartController {
 	private ISysDepartService sysDepartService;
 
 	/**
+	 * 查询数据 查出我的部门,并以树结构数据格式响应给前端
+	 *
+	 * @return
+	 */
+	@RequestMapping(value = "/queryMyDeptTreeList", method = RequestMethod.GET)
+	public Result<List<SysDepartTreeModel>> queryMyDeptTreeList() {
+		Result<List<SysDepartTreeModel>> result = new Result<>();
+		LoginUser user = (LoginUser) SecurityUtils.getSubject().getPrincipal();
+		try {
+			if(oConvertUtils.isNotEmpty(user.getIdentity()) && user.getIdentity() == CommonConstant.USER_IDENTITY_2 ){
+				List<SysDepartTreeModel> list = sysDepartService.queryMyDeptTreeList(user.getDepartIds());
+				result.setResult(list);
+				result.setMessage(CommonConstant.USER_IDENTITY_2.toString());
+				result.setSuccess(true);
+			}else{
+				result.setMessage(CommonConstant.USER_IDENTITY_1.toString());
+				result.setSuccess(true);
+			}
+		} catch (Exception e) {
+			log.error(e.getMessage(),e);
+		}
+		return result;
+	}
+
+	/**
 	 * 查询数据 查出所有部门,并以树结构数据格式响应给前端
 	 * 
 	 * @return
@@ -88,7 +115,7 @@ public class SysDepartController {
 	 * @return
 	 */
 	@RequestMapping(value = "/add", method = RequestMethod.POST)
-	@CacheEvict(value= {CacheConstant.DEPART_INFO_CACHE,CacheConstant.DEPART_IDMODEL_CACHE}, allEntries=true)
+	@CacheEvict(value= {CacheConstant.SYS_DEPARTS_CACHE,CacheConstant.SYS_DEPART_IDS_CACHE}, allEntries=true)
 	public Result<SysDepart> add(@RequestBody SysDepart sysDepart, HttpServletRequest request) {
 		Result<SysDepart> result = new Result<SysDepart>();
 		String username = JwtUtil.getUserNameByToken(request);
@@ -113,7 +140,7 @@ public class SysDepartController {
 	 * @return
 	 */
 	@RequestMapping(value = "/edit", method = RequestMethod.PUT)
-	@CacheEvict(value= {CacheConstant.DEPART_INFO_CACHE,CacheConstant.DEPART_IDMODEL_CACHE}, allEntries=true)
+	@CacheEvict(value= {CacheConstant.SYS_DEPARTS_CACHE,CacheConstant.SYS_DEPART_IDS_CACHE}, allEntries=true)
 	public Result<SysDepart> edit(@RequestBody SysDepart sysDepart, HttpServletRequest request) {
 		String username = JwtUtil.getUserNameByToken(request);
 		sysDepart.setUpdateBy(username);
@@ -140,7 +167,7 @@ public class SysDepartController {
     * @return
     */
     @RequestMapping(value = "/delete", method = RequestMethod.DELETE)
-	@CacheEvict(value= {CacheConstant.DEPART_INFO_CACHE,CacheConstant.DEPART_IDMODEL_CACHE}, allEntries=true)
+	@CacheEvict(value= {CacheConstant.SYS_DEPARTS_CACHE,CacheConstant.SYS_DEPART_IDS_CACHE}, allEntries=true)
    public Result<SysDepart> delete(@RequestParam(name="id",required=true) String id) {
 
        Result<SysDepart> result = new Result<SysDepart>();
@@ -167,7 +194,7 @@ public class SysDepartController {
 	 * @return
 	 */
 	@RequestMapping(value = "/deleteBatch", method = RequestMethod.DELETE)
-	@CacheEvict(value= {CacheConstant.DEPART_INFO_CACHE,CacheConstant.DEPART_IDMODEL_CACHE}, allEntries=true)
+	@CacheEvict(value= {CacheConstant.SYS_DEPARTS_CACHE,CacheConstant.SYS_DEPART_IDS_CACHE}, allEntries=true)
 	public Result<SysDepart> deleteBatch(@RequestParam(name = "ids", required = true) String ids) {
 
 		Result<SysDepart> result = new Result<SysDepart>();
@@ -228,20 +255,14 @@ public class SysDepartController {
 	@RequestMapping(value = "/searchBy", method = RequestMethod.GET)
 	public Result<List<SysDepartTreeModel>> searchBy(@RequestParam(name = "keyWord", required = true) String keyWord) {
 		Result<List<SysDepartTreeModel>> result = new Result<List<SysDepartTreeModel>>();
-		try {
-			List<SysDepartTreeModel> treeList = this.sysDepartService.searhBy(keyWord);
-			if (treeList.size() == 0 || treeList == null) {
-				throw new Exception();
-			}
-			result.setSuccess(true);
-			result.setResult(treeList);
-			return result;
-		} catch (Exception e) {
-			e.fillInStackTrace();
+		List<SysDepartTreeModel> treeList = this.sysDepartService.searhBy(keyWord);
+		if (treeList == null || treeList.size() == 0) {
 			result.setSuccess(false);
-			result.setMessage("查询失败或没有您想要的任何数据!");
+			result.setMessage("未查询匹配数据！");
 			return result;
 		}
+		result.setResult(treeList);
+		return result;
 	}
 
 
@@ -249,7 +270,6 @@ public class SysDepartController {
      * 导出excel
      *
      * @param request
-     * @param response
      */
     @RequestMapping(value = "/exportXls")
     public ModelAndView exportXls(SysDepart sysDepart,HttpServletRequest request) {
@@ -282,6 +302,7 @@ public class SysDepartController {
      * @return
      */
     @RequestMapping(value = "/importExcel", method = RequestMethod.POST)
+	@CacheEvict(value= {CacheConstant.SYS_DEPARTS_CACHE,CacheConstant.SYS_DEPART_IDS_CACHE}, allEntries=true)
     public Result<?> importExcel(HttpServletRequest request, HttpServletResponse response) {
         MultipartHttpServletRequest multipartRequest = (MultipartHttpServletRequest) request;
         Map<String, MultipartFile> fileMap = multipartRequest.getFileMap();

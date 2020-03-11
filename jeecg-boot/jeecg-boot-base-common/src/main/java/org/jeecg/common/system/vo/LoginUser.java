@@ -85,4 +85,19 @@ public class LoginUser {
      */
     private String activitiSync;
 
+	/**
+	 * 创建时间
+	 */
+	private Date createTime;
+
+	/**
+	 *  身份（1 普通员工 2 上级）
+	 */
+	private Integer identity;
+
+	/**
+	 * 管理部门ids
+	 */
+	private String departIds;
+
 }
