@@ -19,10 +19,14 @@ export const options = {
     a: ['style', 'target', 'href', 'title', 'rel'],
     img: ['style', 'src', 'title','width','height'],
     div: ['style'],
-    table: ['style', 'width', 'border', 'height'],
-    tr: ['style'],
-    td: ['style', 'width', 'colspan'],
-    th: ['style', 'width', 'colspan'],
+    table: ['style', 'width', 'border', 'height', 'cellspacing', 'cellpadding'],
+    tr: ['style', 'valign', 'align'],
+    td: ['style', 'width', 'colspan', 'rowspan', 'border', 'valign', 'align'],
+    th: ['style', 'width', 'colspan', 'rowspan', 'border', 'valign', 'align'],
+    // update-begin--author:liaozhiyang---date:20260807---for:【LHZP-1128】修复thead标签没解析出来
+    thead: ['style'],
+    tfoot: ['style'],
+    // update-end--author:liaozhiyang---date:20260807---for:【LHZP-1128】修复thead标签没解析出来
     tbody: ['style'],
     ul: ['style'],
     li: ['style'],

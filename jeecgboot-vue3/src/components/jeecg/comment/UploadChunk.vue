@@ -17,7 +17,7 @@
           <div class="complex">
             <div class="content">
               <!-- 图片 -->
-              <div v-if="isImage(item)" class="content-top" style="height: 100%">
+              <div v-if="isImage(item) && !item.exist" class="content-top" style="height: 100%">
                 <div class="content-image" :style="{'height':'100%', 'backgroundImage': 'url('+getImageSrc(item)+')'}">
                   <!--  <img style="height: 100%;" :src="getImageSrc(item)">-->
                 </div>
@@ -25,7 +25,7 @@
               <!-- 文件 -->
               <template v-else>
                 <div class="content-top">
-                  <div class="content-icon" :style="{ background: 'url(' + getBackground(item) + ')  no-repeat' }"></div>
+                  <div class="content-icon" :style="{ background: 'url(' + (isImage(item) ? getImageTypeIcon() : getBackground(item)) + ')  no-repeat' }"></div>
                 </div>
                 <div class="content-bottom" :title="item.name">
                   <span>{{ item.name }}</span>
@@ -78,7 +78,7 @@
     },
     emits:['select'],
     setup(_p, {emit}) {
-      const { selectFileList, beforeUpload, handleRemove, getBackground, isImage, getImageSrc, viewImage } = useFileList();
+      const { selectFileList, beforeUpload, handleRemove, getBackground, isImage, getImageSrc, viewImage, getImageTypeIcon } = useFileList();
 
       const [registerModel, { openModal }] = useModal();
       
@@ -107,10 +107,13 @@
 
       function onSelectFileOk(temp) {
         let arr = selectFileList.value;
-        arr.push({
-          ...temp,
-          exist: true
-        })
+        // 代码逻辑说明: 【JHHB-524】我的日程留言功能，从文件库中无法选附件
+        temp.forEach((item) => {
+          arr.push({
+            ...item,
+            exist: true
+          })
+        });
         selectFileList.value = arr;
       }
 
@@ -123,6 +126,7 @@
         clear,
         isImage, 
         getImageSrc, 
+        getImageTypeIcon,
         viewImage,
         registerModel,
         showFileModal,

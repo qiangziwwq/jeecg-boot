@@ -25,6 +25,7 @@ import org.jeecgframework.poi.excel.ExcelImportUtil;
 import org.jeecgframework.poi.excel.def.NormalExcelConstants;
 import org.jeecgframework.poi.excel.entity.ExportParams;
 import org.jeecgframework.poi.excel.entity.ImportParams;
+import org.jeecgframework.poi.excel.entity.enmus.ExcelType;
 import org.jeecgframework.poi.excel.view.JeecgEntityExcelView;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
@@ -32,11 +33,10 @@ import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.multipart.MultipartHttpServletRequest;
 import org.springframework.web.servlet.ModelAndView;
 
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.util.*;
-import java.util.stream.Collectors;
 
  /**
  * @Description: 分类字典
@@ -69,9 +69,6 @@ public class SysCategoryController {
 									  @RequestParam(name="pageNo", defaultValue="1") Integer pageNo,
 									  @RequestParam(name="pageSize", defaultValue="10") Integer pageSize,
 									  HttpServletRequest req) {
-		if(oConvertUtils.isEmpty(sysCategory.getPid())){
-			sysCategory.setPid("0");
-		}
 		Result<IPage<SysCategory>> result = new Result<IPage<SysCategory>>();
 		//------------------------------------------------------------------------------------------------
 		//是否开启系统管理模块的多租户数据隔离【SAAS多租户模式】
@@ -82,12 +79,20 @@ public class SysCategoryController {
 		
 		//--author:os_chengtgen---date:20190804 -----for: 分类字典页面显示错误,issues:377--------start
 		//--author:liusq---date:20211119 -----for: 【vue3】分类字典页面查询条件配置--------start
-		QueryWrapper<SysCategory> queryWrapper = QueryGenerator.initQueryWrapper(sysCategory, req.getParameterMap());
 		String name = sysCategory.getName();
 		String code = sysCategory.getCode();
+		// 代码逻辑说明: pid 不能提前设置到查询实体上，否则会被 QueryGenerator 自动拼成 pid 查询条件，
+		// 导致按名称/编码查询时只能查到根节点，查不出子级数据
+		String pid = sysCategory.getPid();
+		sysCategory.setPid(null);
+		QueryWrapper<SysCategory> queryWrapper = QueryGenerator.initQueryWrapper(sysCategory, req.getParameterMap());
 		//QueryWrapper<SysCategory> queryWrapper = new QueryWrapper<SysCategory>();
 		if(StringUtils.isBlank(name)&&StringUtils.isBlank(code)){
-			queryWrapper.eq("pid", sysCategory.getPid());
+			//无查询条件时按层级加载，默认加载根节点
+			queryWrapper.eq("pid", oConvertUtils.isEmpty(pid)?"0":pid);
+		}else if(oConvertUtils.isNotEmpty(pid)){
+			//有查询条件时不限制层级，除非调用方明确指定了 pid
+			queryWrapper.eq("pid", pid);
 		}
 		//--author:liusq---date:20211119 -----for: 分类字典页面查询条件配置--------end
 		//--author:os_chengtgen---date:20190804 -----for:【vue3】 分类字典页面显示错误,issues:377--------end
@@ -227,18 +232,26 @@ public class SysCategoryController {
       ModelAndView mv = new ModelAndView(new JeecgEntityExcelView());
       // 过滤选中数据
       String selections = request.getParameter("selections");
+      //update-begin---author:scott ---date:20260727  for：【LHZP-1208】分类字典导出包含子级并按层级排序-----------
       if(oConvertUtils.isEmpty(selections)) {
-    	  mv.addObject(NormalExcelConstants.DATA_LIST, pageList);
+    	  mv.addObject(NormalExcelConstants.DATA_LIST, sysCategoryService.sortByHierarchy(pageList));
       }else {
     	  List<String> selectionList = Arrays.asList(selections.split(","));
-    	  List<SysCategory> exportList = pageList.stream().filter(item -> selectionList.contains(item.getId())).collect(Collectors.toList());
+    	  List<SysCategory> exportList = sysCategoryService.filterSelectionWithChildren(pageList, selectionList);
     	  mv.addObject(NormalExcelConstants.DATA_LIST, exportList);
       }
+      //update-end---author:scott ---date:20260727  for：【LHZP-1208】分类字典导出包含子级并按层级排序-----------
       //导出文件名称
       mv.addObject(NormalExcelConstants.FILE_NAME, "分类字典列表");
       mv.addObject(NormalExcelConstants.CLASS, SysCategory.class);
       LoginUser user = (LoginUser) SecurityUtils.getSubject().getPrincipal();
-      mv.addObject(NormalExcelConstants.PARAMS, new ExportParams("分类字典列表数据", "导出人:"+user.getRealname(), "导出信息"));
+      //导出支持xlsx
+      mv.addObject(NormalExcelConstants.PARAMS, new ExportParams("分类字典列表数据", "导出人:"+user.getRealname(), "导出信息", ExcelType.XSSF));
+      //分类字典导出支持导出字段
+      String exportFields = request.getParameter(NormalExcelConstants.EXPORT_FIELDS);
+      if(oConvertUtils.isNotEmpty(exportFields)){
+          mv.addObject(NormalExcelConstants.EXPORT_FIELDS, exportFields);
+      }
       return mv;
   }
 
@@ -265,6 +278,8 @@ public class SysCategoryController {
           params.setNeedSave(true);
           try {
               List<SysCategory> listSysCategorys = ExcelImportUtil.importExcel(file.getInputStream(), SysCategory.class, params);
+			  // 代码逻辑说明: [issues/8612]分类字典导入bug #8612 ------------
+			  Set<String> parentCategoryIds = new HashSet<>();
 			 //按照编码长度排序
               Collections.sort(listSysCategorys);
 			  log.info("排序后的list====>",listSysCategorys);
@@ -278,6 +293,7 @@ public class SysCategoryController {
 					  log.info("pId====>",pId);
 					  if(StringUtils.isNotBlank(pId)){
 						  sysCategoryExcel.setPid(pId);
+						  parentCategoryIds.add(pId);
 					  }
 				  }else{
 					  sysCategoryExcel.setPid("0");
@@ -298,6 +314,16 @@ public class SysCategoryController {
 					  }
 				  }
               }
+			  // 代码逻辑说明: [issues/8612]分类字典导入bug #8612 ------------
+			  if(oConvertUtils.isObjectNotEmpty(parentCategoryIds)){
+				  for (String parentCategoryId : parentCategoryIds) {
+					  SysCategory parentCategory = sysCategoryService.getById(parentCategoryId);
+					  if(oConvertUtils.isObjectNotEmpty(parentCategory)){
+						  parentCategory.setHasChild(CommonConstant.STATUS_1);
+						  sysCategoryService.updateById(parentCategory);
+					  }
+				  }
+			  }
           } catch (Exception e) {
 			  errorMessage.add("发生异常：" + e.getMessage());
 			  log.error(e.getMessage(), e);
@@ -321,12 +347,11 @@ public class SysCategoryController {
  	public Result<SysCategory> loadOne(@RequestParam(name="field") String field,@RequestParam(name="val") String val) {
  		Result<SysCategory> result = new Result<SysCategory>();
  		try {
-			//update-begin-author:taoyan date:2022-5-6 for: issues/3663 sql注入问题
+			// 代码逻辑说明: issues/3663 sql注入问题
 			boolean isClassField = ReflectHelper.isClassField(field, SysCategory.class);
 			if (!isClassField) {
 				return Result.error("字段无效，请检查!");
 			}
-			//update-end-author:taoyan date:2022-5-6 for: issues/3663 sql注入问题
  			QueryWrapper<SysCategory> query = new QueryWrapper<SysCategory>();
  			query.eq(field, val);
  			List<SysCategory> ls = this.sysCategoryService.list(query);

@@ -13,8 +13,10 @@ const render = {
   /**
    * 渲染列表头像
    */
-  renderAvatar: ({ record }) => {
-    if (record.avatar) {
+  renderAvatar: (param) => {
+    if (param == null) return h('span', '');
+    const record = (typeof param === 'object' && 'record' in param) ? param.record : null;
+    if (record && record.avatar) {
       let avatarList = record.avatar.split(',');
       return h(
         'span',
@@ -45,21 +47,25 @@ const render = {
    */
   renderDict: (v, code, renderTag = false) => {
     let text = '';
+    let color = '';
     let array = getDictItemsByCode(code) || [];
     let obj = array.filter((item) => {
       return item.value == v;
     });
     if (obj.length > 0) {
       text = obj[0].text;
+      color = obj[0].color;
     }
     //【jeecgboot-vue3/issues/903】render.renderDict使用tag渲染报警告问题 #903
-    return isEmpty(text) || !renderTag ? h('span', text) : h(Tag, () => text);
+    return isEmpty(text) || !renderTag ? h('span', text) : h(Tag,{ color }, () => text);
   },
   /**
    * 渲染图片
    * @param text
    */
-  renderImage: ({ text }) => {
+  renderImage: (param) => {
+    if (param == null) return h('span', '');
+    const text = typeof param === 'string' ? param : param.text;
     if (!text) {
       return h(Image, {
         width: 30,
@@ -84,7 +90,6 @@ const render = {
         });
       })
     );
-    //update-end-author:taoyan date:2022-5-24 for:  VUEN-1084 【vue3】online表单测试发现的新问题 41、生成的代码，树默认图大小未改
   },
   /**
    * 渲染 Tooltip
@@ -105,7 +110,9 @@ const render = {
    * 渲染a标签
    * @param text
    */
-  renderHref: ({ text }) => {
+  renderHref: (param) => {
+    if (param == null) return '';
+    let text = typeof param === 'string' ? param : param.text;
     if (!text) {
       return '';
     }

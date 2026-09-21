@@ -83,7 +83,9 @@ export const searchFormSchema: FormSchema[] = [
   <#assign bpm_flag=true>
 </#if>
 <#-- update-begin---author:chenrui ---date:20240108  for：[issues/5755]vue代码不加入逻辑删除字段---------- -->
-<#if po.isQuery=='Y' && po.fieldName !='delFlag'>
+<#-- update-begin---author:gj_liusqian ---date:20260806  for：[SQLServer大字段] 排除 Text/LongText/Blob 作为查询条件---------- -->
+<#if po.isQuery=='Y' && po.fieldName !='delFlag' && po.fieldDbType !='Text' && po.fieldDbType !='LongText' && po.fieldDbType !='Blob'>
+<#-- update-end---author:gj_liusqian ---date:20260806  for：[SQLServer大字段] 排除 Text/LongText/Blob 作为查询条件---------- -->
 <#-- update-end---author:chenrui ---date:20240108  for：[issues/5755]vue代码不加入逻辑删除字段---------- -->
 <#assign query_flag=true>
 	<#assign query_field_dictCode="">
@@ -99,7 +101,7 @@ export const searchFormSchema: FormSchema[] = [
 <#if po.classType=='sel_search'>
       component: 'JSearchSelect',
       componentProps:{
-         dict:"${po.dictTable},${po.dictText},${po.dictField}"
+         dict:"${query_field_dictCode}"
       },
 <#elseif po.classType=='sel_user'>
 <#-- update-begin---author:chenrui ---date:20240102  for：[issue/#5711]修复用户选择组件在生成代码后变成部门用户选择组件---------- -->
@@ -203,7 +205,7 @@ export const searchFormSchema: FormSchema[] = [
           </#if>
           pidValue:"${po.dictField}",
       },
-<#elseif po.fieldDbType=='int' || po.fieldDbType=='double' || po.fieldDbType=='BigDecimal'>
+<#elseif po.fieldDbType=='int' || po.fieldDbType=='long' || po.fieldDbType=='double' || po.fieldDbType=='BigDecimal'>
       component: 'InputNumber',
 <#else>
       component: 'Input',
@@ -234,7 +236,7 @@ export const searchFormSchema: FormSchema[] = [
           valueType: 'Date',
           showTime:true
       },
-<#elseif po.fieldDbType=='int' || po.fieldDbType=='double' || po.fieldDbType=='BigDecimal'>
+<#elseif po.fieldDbType=='int' || po.fieldDbType=='long' || po.fieldDbType=='double' || po.fieldDbType=='BigDecimal'>
       component: 'JRangeNumber',
 <#-- update-begin---author:chenrui ---date:20240527  for：[TV360X-388]时间范围查询控件---------- -->
 <#elseif po.classType=='time'>
@@ -355,13 +357,19 @@ export const formSchema: FormSchema[] = [
     <#elseif po.classType=='list'>
     component: 'JDictSelectTag',
     componentProps:{
-        dictCode:"${form_field_dictCode}"
+        dictCode:"${form_field_dictCode}",
+     <#if po.fieldDbType=='int'>
+        stringToNumber: true
+     </#if>
      },
     <#elseif po.classType=='radio'>
     component: 'JDictSelectTag',
     componentProps:{
         dictCode:"${form_field_dictCode}",
-        type: "radio"
+        type: "radio",
+     <#if po.fieldDbType=='int'>
+        stringToNumber: true
+     </#if>
      },
     <#-- update-begin---author:chenrui ---date:20231228  for：[QQYUN-7583] Vue3风格表单页面多选控件渲染成了下拉多选---------- -->
     <#elseif po.classType=='list_multi'>
@@ -389,8 +397,11 @@ export const formSchema: FormSchema[] = [
     <#if po.dictText?default("")?trim?length gt 1>
     <#assign form_cat_back = "${po.dictText}">
     </#if>
-    <#elseif po.fieldDbType=='int' || po.fieldDbType=='double' || po.fieldDbType=='BigDecimal'>
+    <#elseif po.fieldDbType=='int' || po.fieldDbType=='long' || po.fieldDbType=='double' || po.fieldDbType=='BigDecimal'>
     component: 'InputNumber',
+    <#if (po.fieldDbType=='double' || po.fieldDbType=='BigDecimal') && po.scale?? && po.scale?trim?length gt 0>
+    componentProps: { precision: ${po.scale} },
+    </#if>
     <#elseif po.classType=='file'>
     component: 'JUpload',
     componentProps:{
@@ -429,6 +440,10 @@ export const formSchema: FormSchema[] = [
      valueField: '${po.dictField}',
      textField: '${po.dictText}',
      tableName: '${po.dictTable}',
+    <#if po.extendParams?exists && po.extendParams.imageField?exists>
+     imageField: '${po.extendParams.imageField}',
+     </#if>
+     queryMode: 'table',
      multi: <#if (po.queryMode!"") == "multi">true<#else>false</#if>
     },
    <#else>

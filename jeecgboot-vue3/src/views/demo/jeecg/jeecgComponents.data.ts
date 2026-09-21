@@ -1,4 +1,5 @@
-import { FormSchema, JCronValidator } from '/@/components/Form';
+import { FormSchema } from '/@/components/Form';
+import JCronValidator from '/@/components/Form/src/jeecg/components/JEasyCron/validator';
 import { usePermission } from '/@/hooks/web/usePermission';
 
 const { isDisabledAuth } = usePermission();
@@ -220,6 +221,22 @@ export const schemas: FormSchema[] = [
     colProps: { span: 12 },
   },
   {
+    field: 'depart4',
+    component: 'JSelectDepartPost',
+    label: '选择岗位',
+    helpMessage: ['component模式'],
+    componentProps: { showButton: false },
+    colProps: {
+      span: 12,
+    },
+  },
+  {
+    field: 'depart4',
+    component: 'JEllipsis',
+    label: '选择岗位',
+    colProps: { span: 12 },
+  },
+  {
     field: 'user2',
     component: 'JSelectUser',
     label: '用户选择组件',
@@ -254,6 +271,25 @@ export const schemas: FormSchema[] = [
   },
   {
     field: 'user3',
+    component: 'JEllipsis',
+    label: '选中用户',
+    colProps: { span: 12 },
+  },
+  {
+    field: 'userPost1',
+    component: 'JSelectUserByDeptPost',
+    label: '部门岗位选择用户',
+    helpMessage: ['component模式'],
+    componentProps: {
+      labelKey: 'realname',
+      rowKey: 'username',
+    },
+    colProps: {
+      span: 12,
+    },
+  },
+  {
+    field: 'userPost1',
     component: 'JEllipsis',
     label: '选中用户',
     colProps: { span: 12 },
@@ -627,6 +663,42 @@ export const schemas: FormSchema[] = [
     },
   },
   {
+    field: 'pop2',
+    component: 'Input',
+    label: 'JPopup带参数示例',
+    helpMessage: ['插槽模式'],
+    slot: 'JPopup2',
+    colProps: {
+      span: 12,
+    },
+  },
+  {
+    field: 'pop2',
+    component: 'JEllipsis',
+    label: '选中值',
+    colProps: {
+      span: 12,
+    },
+  },
+  {
+    field: 'pop3',
+    component: 'Input',
+    label: 'JPopup带查询条件参数示例',
+    helpMessage: ['插槽模式'],
+    slot: 'JPopup3',
+    colProps: {
+      span: 12,
+    },
+  },
+  {
+    field: 'pop3',
+    component: 'JEllipsis',
+    label: '选中值',
+    colProps: {
+      span: 12,
+    },
+  },
+  {
     field: 'JInputPop',
     component: 'JInputPop',
     label: 'JInputPop',
@@ -864,7 +936,61 @@ export const schemas: FormSchema[] = [
     label: '选中值',
     colProps: { span: 12 },
   },
-
+  {
+    field: 'tabsSelectUser',
+    component: 'Input',
+    label: '用户选择',
+    helpMessage: ['插槽模式-自己保存查询条件'],
+    slot: 'tabsSelectUser',
+    colProps: { span: 12 },
+  },
+  {
+    field: 'tabsSelectUser',
+    component: 'JEllipsis',
+    label: '选中值',
+    colProps: { span: 12 },
+  },
+  {
+    field: 'linkCard1',
+    component: 'JLinkTableCard',
+    label: '关联记录(online模式)',
+    helpMessage: ['component模式', 'queryMode=online（默认）', '仅支持 Online 表单中已配置的表'],
+    colProps: { span: 12 },
+    componentProps: {
+      queryMode: 'online',
+      tableName: 'test_demo',
+      valueField: 'id',
+      textField: 'name,age,sex',
+      multi: false,
+    },
+  },
+  {
+    field: 'linkCard1',
+    component: 'JEllipsis',
+    label: '选中值(id)',
+    colProps: { span: 12 },
+  },
+  {
+    field: 'linkCard3',
+    component: 'JLinkTableCard',
+    label: '关联记录(table模式)',
+    helpMessage: ['component模式', 'queryMode=table + multi=true', '支持数据库中的所有表，多选'],
+    colProps: { span: 12 },
+    componentProps: {
+      queryMode: 'table',
+      tableName: 'sys_user',
+      valueField: 'id',
+      textField: 'realname,username,sex',
+      imageField: 'avatar',
+      multi: true,
+    },
+  },
+  {
+    field: 'linkCard3',
+    component: 'JEllipsis',
+    label: '选中值(id逗号分隔)',
+    colProps: { span: 12 },
+  },
   {
     field: 'orderAuth',
     component: 'Input',
@@ -881,5 +1007,4 @@ export const schemas: FormSchema[] = [
     label: '选中值',
     colProps: { span: 12 },
   },
-  
 ];

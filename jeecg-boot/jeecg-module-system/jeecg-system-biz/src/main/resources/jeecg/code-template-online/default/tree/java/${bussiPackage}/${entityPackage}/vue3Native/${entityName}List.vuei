@@ -1,4 +1,4 @@
-<#include "/common/utils.ftl">
+﻿<#include "/common/utils.ftl">
 <template>
   <div class="p-2">
 <#assign pidFieldName = "">
@@ -21,6 +21,7 @@
 <#assign need_multi = false>
 <#assign need_popup = false>
 <#assign need_popup_dict = false>
+<#assign need_link_table = false>
 <#assign need_select_tag = false>
 <#assign need_select_tree = false>
 <#assign need_time = false>
@@ -80,7 +81,7 @@
 <#if po.classType=='time'>
 <#assign need_time = true>
 </#if>
-<#if po.queryMode=='group' && (po.fieldDbType=='int' || po.fieldDbType=='double' || po.fieldDbType=='BigDecimal')>
+<#if po.queryMode=='group' && (po.fieldDbType=='int' || po.fieldDbType=='long' || po.fieldDbType=='double' || po.fieldDbType=='BigDecimal')>
 <#assign need_range_number = true>
 </#if>
 <#if po.queryMode=='group'>
@@ -117,8 +118,10 @@
       <!--插槽:table标题-->
       <template #tableTitle>
         <a-button type="primary" v-auth="'${entityPackage}:${tableName}:add'"  @click="handleAdd" preIcon="ant-design:plus-outlined"> 新增</a-button>
+        <a-button  type="primary" v-auth="'${entityPackage}:${tableName}:exportXls'"  preIcon="ant-design:export-outlined" @click="onExportXls"> 导出</a-button>
+        <j-upload-button  type="primary" v-auth="'${entityPackage}:${tableName}:importExcel'"  preIcon="ant-design:import-outlined" @click="onImportXls">导入</j-upload-button>
    <#if buttonList?size gt 0>
-    <#list buttonList?sort_by('orderNum') as btn>
+    <#list buttonList as btn>
        <#if btn.buttonStyle == 'button'>
          <a-button type="primary" @click="handle${btn.buttonCode?cap_first}" <#if btn.buttonIcon??> preIcon="ant-design:${btn.buttonIcon}" </#if>>${btn.buttonName}</a-button>
        </#if>
@@ -183,6 +186,7 @@
   import { ref, reactive, unref } from 'vue';
   import { BasicTable, useTable, TableAction } from '/@/components/Table';
   import { useListPage } from '/@/hooks/system/useListPage';
+  import {useModal} from '/@/components/Modal';
   import { columns, superQuerySchema } from './${entityName}.data';
   import {list, delete${entityName}, batchDelete${entityName}, getExportUrl,getImportUrl, getChildList,getChildListBatch} from './${entityName}.api';
   import { downloadFile } from '/@/utils/common/renderUtils';
@@ -238,6 +242,11 @@
         params.hasQuery = "true";
        <#if is_range>
         let rangerQuery = await setRangeQuery();
+        for (let key in fieldPickers) {
+          if (rangerQuery[key] && fieldPickers[key]) {
+            rangerQuery[key] = getDateByPicker(rangerQuery[key], fieldPickers[key]);
+          }
+        }
         return Object.assign(params, rangerQuery);
        <#else>
         for (let key in fieldPickers) {
@@ -516,7 +525,7 @@
          ifShow: !!record.bpmStatus && record.bpmStatus !== '1',
        }
 <#if buttonList?size gt 0>
-    <#list buttonList?sort_by('orderNum') as btn>
+    <#list buttonList as btn>
        <#if btn.buttonStyle == 'link'>
        ,{
           label: '${btn.buttonName}',
@@ -557,7 +566,7 @@
         auth: '${entityPackage}:${tableName}:delete'
       }
 <#if buttonList?size gt 0>
-   <#list buttonList?sort_by('orderNum') as btn>
+   <#list buttonList as btn>
       <#if btn.buttonStyle == 'link'>
       ,{
          label: '${btn.buttonName}',
@@ -595,7 +604,7 @@
   }
   </#if>
 <#if buttonList?size gt 0>
-  <#list buttonList?sort_by('orderNum') as btn>
+  <#list buttonList as btn>
   <#if btn.buttonStyle=='button'>
      function handle${btn.buttonCode?cap_first}(){
         createMessage.info('点击了${btn.buttonName}按钮，对应的业务逻辑需自行实现!');

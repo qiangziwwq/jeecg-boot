@@ -3,8 +3,9 @@
     @register="register"
     :getContainer="getContainer"
     :canFullscreen="false"
+    destroyOnClose
     title="选择用户"
-    :width="600"
+    :width="800"
     wrapClassName="j-user-select-modal2"
   >
     <!-- 部门下拉框 -->
@@ -161,6 +162,7 @@
         if (props.izExcludeMy) {
           excludeUserIdList.value.push(userStore.getUserInfo.id);
         }
+        resetFilterState();
         //加载用户列表
         loadUserList();
       });
@@ -179,6 +181,7 @@
         selectedDepart.value = '';
       }
       function onDepartChange() {
+        pageNo.value = 1;
         loadUserList();
       }
       /*--------------部门下拉框，用于筛选用户---------------*/
@@ -186,6 +189,17 @@
       /*--------------第一页 搜索框---------------*/
       const searchInputStatus = ref(false);
       const searchText = ref('');
+
+      /**
+       * 清空数据
+       */
+      function resetFilterState() {
+        selectedDepart.value = '';
+        searchText.value = '';
+        searchInputStatus.value = false;
+        pageNo.value = 1;
+      }
+      
       function showSearchInput(e) {
         e && prevent(e);
         searchInputStatus.value = true;
@@ -228,11 +242,10 @@
           params['departId'] = selectedDepart.value;
         }
 
-        //update-begin---author:wangshuai---date:2024-02-02---for:【QQYUN-8239】用户角色，添加用户 返回2页数据，实际只显示一页---
+        // 代码逻辑说明: 【QQYUN-8239】用户角色，添加用户 返回2页数据，实际只显示一页---
         if(unref(excludeUserIdList) && unref(excludeUserIdList).length>0){
           params['excludeUserIdList'] = excludeUserIdList.value.join(",");
         }
-        //update-end---author:wangshuai---date:2024-02-02---for:【QQYUN-8239】用户角色，添加用户 返回2页数据，实际只显示一页---
         
         const data = await defHttp.get({ url, params }, { isTransformResponse: false });
         if (data.success) {

@@ -1,14 +1,14 @@
 import type { RouteLocationNormalized, RouteRecordNormalized } from 'vue-router';
 import type { App, Plugin } from 'vue';
-import type { FormSchema } from "@/components/Form";
+import type { FormSchema, FormActionType } from "@/components/Form";
 
 import { unref } from 'vue';
 import { isObject, isFunction, isString } from '/@/utils/is';
+import { dynamicPages } from './dynamicPages';
 import Big from 'big.js';
 import dayjs from "dayjs";
-// update-begin--author:sunjianlei---date:20220408---for: 【VUEN-656】配置外部网址打不开，原因是带了#号，需要替换一下
+// 代码逻辑说明: 【VUEN-656】配置外部网址打不开，原因是带了#号，需要替换一下
 export const URL_HASH_TAB = `__AGWE4H__HASH__TAG__PWHRG__`;
-// update-end--author:sunjianlei---date:20220408---for: 【VUEN-656】配置外部网址打不开，原因是带了#号，需要替换一下
 
 export const noop = () => {};
 
@@ -41,30 +41,12 @@ export function setObjToUrlParams(baseUrl: string, obj: any): string {
 export function deepMerge<T = any>(src: any = {}, target: any = {}): T {
   let key: string;
   for (key in target) {
-    // update-begin--author:liaozhiyang---date:20240329---for：【QQYUN-7872】online表单label较长优化
+    // 代码逻辑说明: 【QQYUN-7872】online表单label较长优化
     if (isObject(src[key]) && isObject(target[key])) {
       src[key] = deepMerge(src[key], target[key]);
     } else {
-      // update-begin--author:liaozhiyang---date:20250318---for：【issues/7940】componentProps写成函数形式时，updateSchema写成对象时，参数没合并
-      try {
-        if (isFunction(src[key]) && isObject(src[key]()) && isObject(target[key])) {
-          // src[key]是函数且返回对象，且target[key]是对象
-          src[key] = deepMerge(src[key](), target[key]);
-        } else if (isObject(src[key]) && isFunction(target[key]) && isObject(target[key]())) {
-          // target[key]是函数且返回对象，且src[key]是对象
-          src[key] = deepMerge(src[key], target[key]());
-        } else if (isFunction(src[key]) && isFunction(target[key]) && isObject(src[key]()) && isObject(target[key]())) {
-          // src[key]是函数且返回对象，target[key]是函数且返回对象
-          src[key] = deepMerge(src[key](), target[key]());
-        } else {
-          src[key] = target[key];
-        }
-      } catch (error) {
-        src[key] = target[key];
-      }
-      // update-end--author:liaozhiyang---date:20250318---for：【issues/7940】componentProps写成函数形式时，updateSchema写成对象时，参数没合并
+      src[key] = target[key];
     }
-    // update-end--author:liaozhiyang---date:20240329---for：【QQYUN-7872】online表单label较长优化
   }
   return src;
 }
@@ -98,11 +80,21 @@ export function getDynamicProps<T, U>(props: T): Partial<U> {
  * @updateBy:zyf
  */
 export function getValueType(props, field) {
-  let formSchema = unref(unref(props)?.schemas);
+  let formSchema = unref(unref(props)?.schemas)
   let valueType = 'string';
   if (formSchema) {
     let schema = formSchema.filter((item) => item.field === field)[0];
-    valueType = schema && schema.componentProps && schema.componentProps.valueType ? schema.componentProps.valueType : valueType;
+    // 代码逻辑说明: 【issues/8976】useListPage 查询中componentProps是函数时获取不到valueType
+    if (schema && schema.componentProps) {
+      if (isFunction(schema.componentProps)) {
+        try {
+          const result = schema.componentProps({ schema, tableAction: {}, formModel: {}, formActionType: {} });
+          valueType = result?.valueType ?? valueType;
+        } catch (err) {}
+      } else {
+        valueType = schema.componentProps.valueType ? schema.componentProps.valueType : valueType;
+      }
+    }
   }
   return valueType;
 }
@@ -110,12 +102,21 @@ export function getValueType(props, field) {
 /**
  * 获取表单字段值数据类型
  * @param schema
+ * @param formAction
  */
-export function getValueTypeBySchema(schema: FormSchema) {
+export function getValueTypeBySchema(schema: FormSchema, formAction: FormActionType) {
   let valueType = 'string';
   if (schema) {
-    const componentProps = schema.componentProps as Recordable;
-    valueType = componentProps?.valueType ? componentProps?.valueType : valueType;
+    const componentProps = formAction.getSchemaComponentProps(schema);
+    // 代码逻辑说明: 【issues/8738】componentProps是函数时获取不到valueType
+    if (isFunction(componentProps)) {
+      try {
+        const result = componentProps({ schema, tableAction: {}, formModel: {}, formActionType: {} });
+        valueType = result?.valueType ?? valueType;
+      } catch (err) {}
+    } else {
+      valueType = componentProps?.valueType ? componentProps?.valueType : valueType;
+    }
   }
   return valueType;
 }
@@ -128,6 +129,10 @@ export function getValueTypeBySchema(schema: FormSchema) {
 export function getDateByPicker(data, picker) {
   if (!data || !picker) {
     return data;
+  }
+  const date = dayjs(data);
+  if (!date.isValid()) {
+    return null;
   }
   /**
    * 需要把年、年月、设置成这段时间内的第一天（[年季度]不需要处理antd回传的就是该季度的第一天，[年周]也不处理）
@@ -300,9 +305,8 @@ export function numToUpper(value) {
       }
     };
     let lth = value.toString().length;
-    // update-begin--author:liaozhiyang---date:20241202---for：【issues/7493】numToUpper方法返回解决错误
+    // 代码逻辑说明: 【issues/7493】numToUpper方法返回解决错误
     value = new Big(value).times(100);
-    // update-end--author:liaozhiyang---date:20241202---for：【issues/7493】numToUpper方法返回解决错误
     value += '';
     let length = value.length;
     if (lth <= 8) {
@@ -332,8 +336,7 @@ export function numToUpper(value) {
   return null;
 }
 
-//update-begin-author:taoyan date:2022-6-8 for:解决老的vue2动态导入文件语法 vite不支持的问题
-const allModules = import.meta.glob('../views/**/*.vue');
+// 代码逻辑说明: 解决老的vue2动态导入文件语法 vite不支持的问题
 export function importViewsFile(path): Promise<any> {
   if (path.startsWith('/')) {
     path = path.substring(1);
@@ -346,10 +349,10 @@ export function importViewsFile(path): Promise<any> {
   }
   return new Promise((resolve, reject) => {
     let flag = true;
-    for (const path in allModules) {
+    for (const path in dynamicPages) {
       if (path == page) {
         flag = false;
-        allModules[path]().then((mod) => {
+        dynamicPages[path]().then((mod) => {
           console.log(path, mod);
           resolve(mod);
         });
@@ -360,7 +363,6 @@ export function importViewsFile(path): Promise<any> {
     }
   });
 }
-//update-end-author:taoyan date:2022-6-8 for:解决老的vue2动态导入文件语法 vite不支持的问题
 
 
 /**
@@ -370,10 +372,8 @@ export function importViewsFile(path): Promise<any> {
  * @param token
  */
 export function goJmReportViewPage(url, id, token) {
-  // update-begin--author:liaozhiyang---date:20230904---for：【QQYUN-6390】eval替换成new Function，解决build警告
   // URL支持{{ window.xxx }}占位符变量
   url = url.replace(/{{([^}]+)?}}/g, (_s1, s2) => _eval(s2))
-  // update-end--author:liaozhiyang---date:20230904---for：【QQYUN-6390】eval替换成new Function，解决build警告
   if (url.includes('?')) {
     url += '&'
   } else {
@@ -444,16 +444,29 @@ export function _eval(str: string) {
  * 通过时间或者时间戳获取对应antd的年、月、周、季度。
  */
 export function getWeekMonthQuarterYear(date) {
-  // 获取 ISO 周数的函数
+  // update-begin--author:liaozhiyang---date:20260713---for：【LHZP-15】表单填入2026年26周，列表显示的是2026年25周
+  // 获取 ISO 8601 周数及对应的周所属年份
   const getISOWeek = (date) => {
-    const jan4 = new Date(date.getFullYear(), 0, 4);
-    const oneDay = 86400000; // 一天的毫秒数
-    return Math.ceil(((date - jan4.getTime()) / oneDay + jan4.getDay() + 1) / 7);
+    // 归一化到当天0点，避免时分秒干扰
+    const target = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+    // ISO 规定周一为一周起点：周一=0 ... 周日=6
+    const dayNr = (target.getDay() + 6) % 7;
+    // 移动到本周的周四（周四决定该周归属的年份）
+    target.setDate(target.getDate() - dayNr + 3);
+    const isoYear = target.getFullYear();
+    // 该 ISO 年第一个周四所在周的周四
+    const firstThursday = new Date(isoYear, 0, 4);
+    const firstDayNr = (firstThursday.getDay() + 6) % 7;
+    firstThursday.setDate(firstThursday.getDate() - firstDayNr + 3);
+    const oneWeek = 7 * 86400000; // 一周的毫秒数
+    const week = 1 + Math.round((target.getTime() - firstThursday.getTime()) / oneWeek);
+    return { week, isoYear };
   };
   // 将时间戳转换为日期对象
   const dateObj = new Date(date);
   // 计算周
-  const week = getISOWeek(dateObj);
+  const { week, isoYear } = getISOWeek(dateObj);
+  // update-end--author:liaozhiyang---date:20260713---for：【LHZP-15】表单填入2026年26周，列表显示的是2026年25周
   // 计算月
   const month = dateObj.getMonth() + 1; // 月份是从0开始的，所以要加1
   // 计算季度
@@ -463,7 +476,7 @@ export function getWeekMonthQuarterYear(date) {
   return {
     year: `${year}`,
     month: `${year}-${month.toString().padStart(2, '0')}`,
-    week: `${year}-${week}周`,
+    week: `${isoYear}-${week}周`,
     quarter: `${year}-Q${quarter}`,
   };
 }
@@ -518,10 +531,9 @@ export function useConditionFilter() {
     {label: '不为空', value: 'not_empty', val: 'NOT_EMPTY'},
   ]
 
-  // 数值、日期
+  // 数值
   const numberConditionOptions = [
     { label: '等于', value: 'eq', val: '=' },
-    { label: '在...中', value: 'in', val: 'IN', title: '包含' },
     { label: '不等于', value: 'ne', val: '!=' },
     { label: '大于', value: 'gt', val: '>' },
     { label: '大于等于', value: 'ge', val: '>=' },
@@ -530,7 +542,18 @@ export function useConditionFilter() {
     ...commonConditionOptions,
   ];
 
-  // 文本、密码、多行文本、富文本、markdown
+  // 日期、日期时间、时间：不支持"在...中"（包含）
+  const dateConditionOptions = [
+    { label: '等于', value: 'eq', val: '=' },
+    { label: '不等于', value: 'ne', val: '!=' },
+    { label: '大于', value: 'gt', val: '>' },
+    { label: '大于等于', value: 'ge', val: '>=' },
+    { label: '小于', value: 'lt', val: '<' },
+    { label: '小于等于', value: 'le', val: '<=' },
+    ...commonConditionOptions,
+  ];
+
+  // 文本、多行文本
   const inputConditionOptions = [
     { label: '等于', value: 'eq', val: '=' },
     { label: '模糊', value: 'like', val: 'LIKE' },
@@ -540,9 +563,17 @@ export function useConditionFilter() {
     { label: '不等于', value: 'ne', val: '!=' },
     ...commonConditionOptions,
   ];
+  // -update-begin--author:liaozhiyang---date:20260810---for：【LHZP-523】高级查询组件查询条件调整
+  // 单值选择控件：下拉、省市区、单选、开关、下拉搜索、分类字典、自定义树
+  const singleSelectConditionOptions = [
+    { label: '等于', value: 'eq', val: '=' },
+    { label: '不等于', value: 'ne', val: '!=' },
+    ...commonConditionOptions,
+  ];
+  // -update-end--author:liaozhiyang---date:20260810---for：【LHZP-523】高级查询组件查询条件调整
 
-  // 下拉、单选、多选、开关、用户、部门、关联记录、省市区、popup、popupDict、下拉多选、下拉搜索、分类字典、自定义树
-  const selectConditionOptions = [
+  // 支持多值的选择控件：多选、用户、部门、关联记录、popup、popupDict、下拉多选
+  const multiSelectConditionOptions = [
     { label: '等于', value: 'eq', val: '=' },
     { label: '在...中', value: 'in', val: 'IN', title: '包含' },
     { label: '不等于', value: 'ne', val: '!=' },
@@ -570,29 +601,32 @@ export function useConditionFilter() {
     switch (data.view) {
       case 'file':
       case 'image':
+      case 'umeditor':
+      case 'markdown':
       case 'password':
         return commonConditionOptions;
       case 'text':
       case 'textarea':
-      case 'umeditor':
-      case 'markdown':
-      case 'pca':
-      case 'popup':
         return inputConditionOptions;
-      case 'list':
-      case 'radio':
       case 'checkbox':
-      case 'switch':
       case 'sel_user':
       case 'sel_depart':
       case 'link_table':
       case 'popup_dict':
       case 'list_multi':
+        return multiSelectConditionOptions;
+      case 'list':
+      case 'radio':
+      case 'switch':
+      case 'pca':
       case 'sel_search':
       case 'cat_tree':
       case 'sel_tree':
-        return selectConditionOptions;
+        return singleSelectConditionOptions;
       case 'date':
+      case 'datetime':
+      case 'time':
+        return dateConditionOptions;
       // number是虚拟的
       case 'number':
         return numberConditionOptions;
@@ -657,3 +691,182 @@ export const split = (str) => {
   }
   return str;
 };
+/**
+ * 解码 HTML 实体（如 &lt;thead&gt; → <thead>），用于修复混合格式内容
+ * update-begin--author:liaozhiyang---date:20260807---for:【LHZP-1128】修复thead标签没解析出来
+ */
+export const decodeHtmlEntities = (html: string): string => {
+  if (!html || !/&(?:#x?[0-9a-f]+|[a-z]+);/i.test(html)) {
+    return html;
+  }
+  const textarea = document.createElement('textarea');
+  textarea.innerHTML = html;
+  return textarea.value;
+};
+// update-end--author:liaozhiyang---date:20260807---for:【LHZP-1128】修复thead标签没解析出来
+
+/**
+  * 处理word文档中的o:p标签
+  * @param html
+ */
+export const removeSpecialTags = (html: string): string => {
+  if (!html) return '';
+  try {
+    const BORDER = '1px solid #8c8c8c';
+
+    // ===================================================================
+    // 第一步：移除 Office 垃圾标签（纯字符串）
+    // ===================================================================
+    // o:p 标签（转义和普通形式）
+    html = html.replace(/&lt;o:p[^&]*?&gt;.*?&lt;\/o:p&gt;/gis, '');
+    html = html.replace(/&lt;o:p[^&]*?\/?&gt;/gis, '');
+    html = html.replace(/&lt;\/o:p&gt;/gis, '');
+    html = html.replace(/<o:p[^>]*>.*?<\/o:p>/gis, '');
+    html = html.replace(/<o:p[^>]*\/?>/gis, '');
+    html = html.replace(/<\/o:p>/gis, '');
+
+    // style 标签（转义和普通形式）
+    html = html.replace(/&lt;style[^&]*?&gt;.*?&lt;\/style&gt;/gis, '');
+    html = html.replace(/&lt;style[^&]*?\/?&gt;/gis, '');
+    html = html.replace(/&lt;\/style&gt;/gis, '');
+    html = html.replace(/<style[^>]*>.*?<\/style>/gis, '');
+
+    // 条件注释和 Office 命名空间标签
+    html = html.replace(/<!--\[if[^>]*>.*?<!\[endif\]-->/gis, '');
+    html = html.replace(/<\/?w:[^>]*>/gis, '');
+    html = html.replace(/<\/?xml[^>]*>/gis, '');
+    html = html.replace(/<\/?v:[^>]*>/gis, '');
+
+    // ===================================================================
+    // 第二步：DOM 清理（仅清理空段落，完全不动表格行结构）
+    //   ★ 关键：放在边框处理之前，防止 DOM 序列化丢失 !important
+    // ===================================================================
+    try {
+      const DOMParserCtor: any =
+          typeof DOMParser !== 'undefined' ? DOMParser : (globalThis as any).DOMParser;
+      if (DOMParserCtor) {
+        const parser = new DOMParserCtor() as DOMParser;
+        const doc = parser.parseFromString(html, 'text/html') as Document;
+
+        // 仅清理单元格内的空 <p> 标签
+        const cells = doc.querySelectorAll('td,th');
+        for (let ci = 0; ci < cells.length; ci++) {
+          const cell = cells[ci] as HTMLElement;
+          if (!cell) continue;
+          const ps = cell.querySelectorAll('p');
+          for (let pi = ps.length - 1; pi >= 0; pi--) {
+            const p = ps[pi] as HTMLParagraphElement;
+            if (!p) continue;
+            const content = (p.innerHTML || '').replace(/&nbsp;|\u00A0/g, '').trim();
+            if (content === '') {
+              p.remove();
+            } else {
+              const frag = doc.createDocumentFragment();
+              while (p.firstChild) frag.appendChild(p.firstChild);
+              if (p.parentNode) p.parentNode.replaceChild(frag, p);
+            }
+          }
+        }
+
+        html = doc.body.innerHTML;
+      }
+    } catch (_) {
+      // DOM 不可用，跳过段落清理（不影响边框修复）
+    }
+
+    // ===================================================================
+    // 第三步：注入表格样式 <style>（兜底保障）
+    //   ★ 放在 DOM 序列化之后，确保 <style> 标签不会被 DOM 改写
+    //   ★ 选择器必须限定在 .jeecg-rich-content 内：v-html 中的 <style> 会进入文档并全局生效，
+    //     若写成裸 table/img 选择器，会污染页面上的 Ant Design Table 等其它表格样式。
+    // ===================================================================
+    const RICH_CONTENT_CLASS = 'jeecg-rich-content';
+    const scopedCSS = `<style>
+.${RICH_CONTENT_CLASS} table{border-collapse:collapse!important;border-spacing:0!important;width:100%!important;max-width:100%!important;}
+.${RICH_CONTENT_CLASS} table td,.${RICH_CONTENT_CLASS} table th{border-top:${BORDER}!important;border-right:${BORDER}!important;border-bottom:${BORDER}!important;border-left:${BORDER}!important;padding:6px 8px!important;vertical-align:middle!important;box-sizing:border-box!important;empty-cells:show!important;}
+.${RICH_CONTENT_CLASS} table td p,.${RICH_CONTENT_CLASS} table th p{margin:0!important;padding:0!important;line-height:1.4!important;}
+.${RICH_CONTENT_CLASS} img{max-width:100%!important;height:auto!important;display:block!important;}
+</style>`;
+    // update-begin--author:liaozhiyang---date:20260803---for:【LHZP-1239】我的消息页面点击通知公告数据查看按钮页面表格样式变了
+    // 用作用域容器包裹正文，保证上面的选择器只命中富文本内部
+    html = `${scopedCSS}<div class="${RICH_CONTENT_CLASS}">${html}</div>`;
+    // update-end--author:liaozhiyang---date:20260803---for:【LHZP-1239】我的消息页面点击通知公告数据查看按钮页面表格样式变了
+    // ===================================================================
+    // 第四步：纯字符串处理内联样式（核心边框修复）
+    //   ★ 最后执行！确保输出 HTML 中的 !important 不会被任何后续处理丢失
+    //
+    //   策略：按分号拆分 style 值，逐条判断属性名，
+    //         过滤掉所有 border* 和 mso-* 声明，
+    //         然后追加统一的边框声明（含 !important）
+    // ===================================================================
+
+    /**
+     * 从 CSS style 字符串中移除所有 border* 和 mso-* 声明，
+     * 保留其余布局相关属性（width, height, padding, text-align 等）
+     */
+    function stripBorderAndMso(styleStr: string): string {
+      return styleStr
+          .split(';')
+          .filter(function (decl) {
+            const trimmed = decl.trim();
+            if (!trimmed) return false;
+            const colonIdx = trimmed.indexOf(':');
+            if (colonIdx === -1) return true; // 保留无效声明（安全起见）
+            const prop = trimmed.substring(0, colonIdx).trim().toLowerCase();
+            // 移除所有 border 开头和 mso- 开头的属性
+            if (prop.startsWith('border') || prop.startsWith('mso-')) return false;
+            return true;
+          })
+          .join(';');
+    }
+
+    // 4a. 移除 <table> 上的 border="0" HTML 属性
+    html = html.replace(/(<table\b[^>]*?)\sborder\s*=\s*['"]?0['"]?/gi, '$1');
+
+    // 4b. 处理 <table> 标签的内联样式
+    html = html.replace(/<table(\s[^>]*)>/gi, function (fullMatch, attrs) {
+      try {
+        const sm = attrs.match(/\sstyle\s*=\s*(["'])([\s\S]*?)\1/i);
+        if (sm) {
+          const q = sm[1];
+          const cleaned = stripBorderAndMso(sm[2]);
+          const newStyle = cleaned
+              + ';border-collapse:collapse!important'
+              + ';border-spacing:0!important'
+              + ';width:100%!important';
+          return '<table' + attrs.replace(sm[0], ` style=${q}${newStyle}${q}`) + '>';
+        }
+        return '<table' + attrs
+            + ' style="border-collapse:collapse!important;border-spacing:0!important;width:100%!important">';
+      } catch (_) { return fullMatch; }
+    });
+
+    // 4c. 处理 <td>/<th> 标签的内联样式
+    const cellBorderCSS =
+        `border-top:${BORDER}!important;` +
+        `border-right:${BORDER}!important;` +
+        `border-bottom:${BORDER}!important;` +
+        `border-left:${BORDER}!important;` +
+        'padding:6px 8px!important;' +
+        'vertical-align:middle!important;' +
+        'box-sizing:border-box!important';
+
+    html = html.replace(/<(td|th)(\s[^>]*)>/gi, function (fullMatch, tag, attrs) {
+      try {
+        const sm = attrs.match(/\sstyle\s*=\s*(["'])([\s\S]*?)\1/i);
+        if (sm) {
+          const q = sm[1];
+          const cleaned = stripBorderAndMso(sm[2]);
+          const newStyle = (cleaned ? cleaned + ';' : '') + cellBorderCSS;
+          return '<' + tag + attrs.replace(sm[0], ` style=${q}${newStyle}${q}`) + '>';
+        }
+        return '<' + tag + attrs + ` style="${cellBorderCSS}">`;
+      } catch (_) { return fullMatch; }
+    });
+
+    return html;
+  } catch (_) {
+    return html;
+  }
+};
+

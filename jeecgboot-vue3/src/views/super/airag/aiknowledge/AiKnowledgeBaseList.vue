@@ -39,7 +39,7 @@
         </a-card>
       </a-col>
       <a-col v-if="knowledgeList && knowledgeList.length>0" :xxl="4" :xl="6" :lg="6" :md="6" :sm="12" :xs="24" v-for="item in knowledgeList">
-        <a-card class="knowledge-card pointer" @click="handleDocClick(item.id)">
+        <a-card class="knowledge-card pointer" @click="handleDocClick(item)">
           <div class="knowledge-header">
             <div class="flex">
               <img class="header-img" src="./icon/knowledge.png" />
@@ -52,9 +52,15 @@
           <div class="mt-10 text-desc">
             <span>{{ item.descr || '暂无描述' }}</span>
           </div>
-          <div class="knowledge-footer">
-            <Icon class="knowledge-footer-icon" icon="ant-design:deployment-unit-outlined" size="14"></Icon>
-            <span>{{ item.embedId_dictText }}</span>
+          <div class="knowledge-footer flex" style="justify-content: space-between">
+            <div style="width: calc(100% - 60px)" class="ellipsis">
+              <Icon class="knowledge-footer-icon" icon="ant-design:deployment-unit-outlined" size="14"></Icon>
+              <span :title="item.embedId_dictText">{{ item.embedId_dictText }}</span>
+            </div>
+            <div>
+              <a-tag v-if="item.type == 'memory'" color="orange" class="tag-style">记忆库</a-tag>
+              <a-tag v-else color="blue" class="tag-style">知识库</a-tag>
+            </div>
           </div>
           <div class="knowledge-btn">
             <a-dropdown placement="bottomRight" :trigger="['click']" :getPopupContainer="(node) => node.parentNode">
@@ -142,7 +148,7 @@
       //当前页数
       const pageNo = ref<number>(1);
       //每页条数
-      const pageSize = ref<number>(10);
+      const pageSize = ref<number>(30);
       //总条数
       const total = ref<number>(0);
       //可选择的页数
@@ -265,9 +271,12 @@
        * 参数配置点击事件
        *
        * @param id
+       * @param type
        */
-      function handleDocClick(id) {
-        openDocModal(true, { id });
+      //update-begin---wangshuai---date:20260414  for：【QQYUN-14932】创建知识库时，可以创建一个分段策略，知识库里面的文档默认使用知识库的分段策略------------
+      function handleDocClick(item) {
+        openDocModal(true, { id: item.id, type: item.type, knowledgeMetadata: item.metadata });
+      //update-end---wangshuai---date:20260414  for：【QQYUN-14932】创建知识库时，可以创建一个分段策略，知识库里面的文档默认使用知识库的分段策略------------
       }
 
       /**
@@ -277,7 +286,7 @@
       async function handleVectorization(id) {
         rebuild({ knowIds: id }).then((res) =>{
           if(res.success){
-            createMessage.success("向量化成功！");
+            createMessage.success("操作成功，开始异步重建知识库，请稍后查看！");
             reload();
           }else{
             createMessage.warning("向量化失败！");
@@ -319,12 +328,21 @@
     height: calc(100vh - 115px);
     background: #f7f8fc;
     padding: 24px;
-    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+
+    .jeecg-basic-table-form-container {
+      flex-shrink: 0;
+    }
 
     .knowledge-row {
-      max-height: calc(100% - 100px);
+      flex: 1;
+      min-height: 0;
       margin-top: 20px;
       overflow-y: auto;
+      align-content: flex-start;
+      align-items: flex-start;
       .knowledge-header {
         position: relative;
         font-size: 14px;
@@ -350,6 +368,12 @@
           }
         }
       }
+    }
+
+    .list-footer {
+      flex-shrink: 0;
+      margin-top: 12px;
+      padding-top: 4px;
     }
   }
 
@@ -459,7 +483,6 @@
   }
   .list-footer {
     text-align: right;
-    margin-top: 5px;
   }
   .jeecg-basic-table-form-container {
     padding: 0;
@@ -496,5 +519,10 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+  .tag-style{
+    margin-right: 5px;
+    height: 20px;
+    line-height: 18px;
   }
 </style>

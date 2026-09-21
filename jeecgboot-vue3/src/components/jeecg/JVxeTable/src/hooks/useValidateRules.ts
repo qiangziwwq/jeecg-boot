@@ -22,12 +22,18 @@ export function useValidateRules(args: HandleArgs) {
           delete rule.pattern;
         } else {
           // 兼容Online表单的特殊规则
+          let reg: any = rule.pattern;
           for (let foo of fooPatterns) {
             if (foo.value === rule.pattern) {
-              rule.pattern = foo.pattern;
+              reg = foo.pattern;
               break;
             }
           }
+          // update-begin--author:liaozhiyang---date:20260714---for：【LHZP-172】行编辑pattern校验空值时不应触发，仅有值时校验（非空由required规则负责）
+          const regExp = reg instanceof RegExp ? reg : new RegExp(reg);
+          delete rule.pattern;
+          rule.validator = emptySkipPatternValidator(regExp);
+          // update-end--author:liaozhiyang---date:20260714---for：【LHZP-172】行编辑pattern校验空值时不应触发，仅有值时校验（非空由required规则负责）
         }
       } else if (typeof rule.handler === 'function') {
         // 自定义函数校验
@@ -43,9 +49,8 @@ export function useValidateRules(args: HandleArgs) {
 function uniqueValidator({ methods }: HandleArgs) {
   return function (event) {
     const { cellValue, column, rule } = event;
-    // update-begin--author:liaozhiyang---date:20240522---for：【TV360X-299】JVxetable组件中唯一校验过滤掉空字符串
+    // 代码逻辑说明: 【TV360X-299】JVxetable组件中唯一校验过滤掉空字符串
     if (cellValue == '') return Promise.resolve();
-    // update-end--author:liaozhiyang---date:20240522---for：【TV360X-299】JVxetable组件中唯一校验过滤掉空字符串
     let tableData = methods.getTableData();
     let findCount = 0;
     for (let rowData of tableData) {
@@ -79,22 +84,33 @@ function handlerConvertToValidator(event) {
   });
 }
 
+// update-begin--author:liaozhiyang---date:20260714---for：【LHZP-172】行编辑pattern校验空值时不应触发，仅有值时校验（非空由required规则负责）
+/** pattern 校验器：空值不校验（非空交给 required 规则），仅当有值时做正则校验 */
+function emptySkipPatternValidator(regExp: RegExp) {
+  return function (event) {
+    const { cellValue, rule } = event;
+    if (cellValue === '' || cellValue === null || cellValue === undefined) {
+      return Promise.resolve();
+    }
+    return regExp.test(String(cellValue)) ? Promise.resolve() : Promise.reject(new Error(rule.message));
+  };
+}
+// update-end--author:liaozhiyang---date:20260714---for：【LHZP-172】行编辑pattern校验空值时不应触发，仅有值时校验（非空由required规则负责）
+
 // 兼容 online 的规则
 const fooPatterns = [
   { title: '非空', value: '*', pattern: /^.+$/ },
   { title: '6到16位数字', value: 'n6-16', pattern: /^\d{6,16}$/ },
   { title: '6到16位任意字符', value: '*6-16', pattern: /^.{6,16}$/ },
   { title: '6到18位字母', value: 's6-18', pattern: /^[a-z|A-Z]{6,18}$/ },
-  //update-begin-author:taoyan date:2022-6-1 for: VUEN-1160 对多子表，网址校验不正确
+  // 代码逻辑说明: VUEN-1160 对多子表，网址校验不正确
   {
     title: '网址',
     value: 'url',
     pattern: /^((ht|f)tps?):\/\/[\w\-]+(\.[\w\-]+)+([\w\-.,@?^=%&:\/~+#]*[\w\-@?^=%&\/~+#])?$/,
   },
-  //update-end-author:taoyan date:2022-6-1 for: VUEN-1160 对多子表，网址校验不正确
-  // update-begin--author:liaozhiyang---date:20240527---for：【TV360X-466】邮箱跟一对第一校验规则一致
+  // 代码逻辑说明: 【TV360X-466】邮箱跟一对第一校验规则一致
   { title: '电子邮件', value: 'e', pattern: /^[a-zA-Z0-9_-]+@[a-zA-Z0-9_-]+(\.[a-zA-Z0-9_-]+)+$/ },
-  // update-end--author:liaozhiyang---date:20240527---for：【TV360X-466】邮箱跟一对第一校验规则一致
   { title: '手机号码', value: 'm', pattern: /^1[3456789]\d{9}$/ },
   { title: '邮政编码', value: 'p', pattern: /^\d{6}$/ },
   { title: '字母', value: 's', pattern: /^[A-Z|a-z]+$/ },

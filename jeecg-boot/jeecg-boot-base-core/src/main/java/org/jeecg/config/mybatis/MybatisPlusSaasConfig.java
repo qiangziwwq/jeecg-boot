@@ -1,38 +1,40 @@
 package org.jeecg.config.mybatis;
 
-import java.util.ArrayList;
-import java.util.List;
-
 import cn.hutool.core.util.ObjectUtil;
+import com.baomidou.mybatisplus.extension.plugins.MybatisPlusInterceptor;
+import com.baomidou.mybatisplus.extension.plugins.handler.TenantLineHandler;
 import com.baomidou.mybatisplus.extension.plugins.inner.DynamicTableNameInnerInterceptor;
 import com.baomidou.mybatisplus.extension.plugins.inner.OptimisticLockerInnerInterceptor;
+import com.baomidou.mybatisplus.extension.plugins.inner.TenantLineInnerInterceptor;
+import lombok.extern.slf4j.Slf4j;
+import net.sf.jsqlparser.expression.Expression;
+import net.sf.jsqlparser.expression.LongValue;
 import org.jeecg.common.config.TenantContext;
 import org.jeecg.common.constant.CommonConstant;
 import org.jeecg.common.constant.TenantConstant;
 import org.jeecg.common.util.SpringContextUtils;
 import org.jeecg.common.util.TokenUtils;
 import org.jeecg.common.util.oConvertUtils;
+import org.jeecg.config.mybatis.interceptor.MultiDataSourcePaginationInnerInterceptor;
 import org.mybatis.spring.annotation.MapperScan;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.Ordered;
+import org.springframework.core.annotation.Order;
 
-import com.baomidou.mybatisplus.extension.plugins.MybatisPlusInterceptor;
-import com.baomidou.mybatisplus.extension.plugins.handler.TenantLineHandler;
-import com.baomidou.mybatisplus.extension.plugins.inner.PaginationInnerInterceptor;
-import com.baomidou.mybatisplus.extension.plugins.inner.TenantLineInnerInterceptor;
-
-import net.sf.jsqlparser.expression.Expression;
-import net.sf.jsqlparser.expression.LongValue;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * 单数据源配置（jeecg.datasource.open = false时生效）
  * @Author zhoujf
  *
  */
+@Slf4j
 @Configuration
 @MapperScan(value={"org.jeecg.**.mapper*"})
 public class MybatisPlusSaasConfig {
-
+    
     /**
      * 是否开启系统模块的租户隔离
      *  控制范围：用户、角色、部门、我的部门、字典、分类字典、多数据源、职务、通知公告
@@ -82,6 +84,10 @@ public class MybatisPlusSaasConfig {
 
 
     @Bean
+    // 顺序需低于 OnlineCgformDataSourceMybatisInterceptor（其为 LOWEST_PRECEDENCE），使分页插件处于数据源切换拦截器的内层，
+    // 保证 Online 物理表查询时数据源已 push、分页插件 beforeQuery 探测连接能路由到正确的数据源
+    // author:zhangdaiscott date:2026-07-09 for：修复Online配置多数据源导出excel数据为空
+    @Order(Ordered.LOWEST_PRECEDENCE - 1)
     public MybatisPlusInterceptor mybatisPlusInterceptor() {
         MybatisPlusInterceptor interceptor = new MybatisPlusInterceptor();
         // 先 add TenantLineInnerInterceptor 再 add PaginationInnerInterceptor
@@ -119,11 +125,12 @@ public class MybatisPlusSaasConfig {
                 return true;
             }
         }));
-        //update-begin-author:zyf date:20220425 for:【VUEN-606】注入动态表名适配拦截器解决多表名问题
+        // 注入动态表名适配拦截器解决多表名问题
         interceptor.addInnerInterceptor(dynamicTableNameInnerInterceptor());
-        //update-end-author:zyf date:20220425 for:【VUEN-606】注入动态表名适配拦截器解决多表名问题
-        interceptor.addInnerInterceptor(new PaginationInnerInterceptor());
-        //【jeecg-boot/issues/3847】增加@Version乐观锁支持 
+        //update-begin---author:scott ---date:2026-07-09  for：【LHZP-9、LHZP-8】使用按连接实时探测方言的分页拦截器，兼容主库/从库不同数据库类型（多数据源）；SQL Server 走 2005 方言并做 ORDER BY 去重（保留 issues/8666 修复）---
+        interceptor.addInnerInterceptor(new MultiDataSourcePaginationInnerInterceptor());
+        //update-end---author:scott ---date:2026-07-09  for：【LHZP-9、LHZP-8】使用按连接实时探测方言的分页拦截器，兼容主库/从库不同数据库类型（多数据源）；SQL Server 走 2005 方言并做 ORDER BY 去重（保留 issues/8666 修复）---
+        // 增加@Version乐观锁支持 
         interceptor.addInnerInterceptor(new OptimisticLockerInnerInterceptor());
         return interceptor;
     }

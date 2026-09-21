@@ -51,9 +51,26 @@
                 <a-select v-model:value="model[field]" @change="handleModelTypeChange" :disabled="modelTypeDisabled">
                   <a-select-option v-for="item in modelTypeAddOption" :value="item">
                     <span v-if="item === 'LLM'">语言模型</span>
-                    <span v-else>向量模型</span>
+                    <span v-else-if="item === 'EMBED'">向量模型</span>
+                    <span v-else-if="item === 'IMAGE'">图像模型</span>
                   </a-select-option>
                 </a-select>
+              </template>
+
+              <template #extraParams="{ model, field }">
+                <a-input v-model:value="model[field]" readonly placeholder="点击右侧按钮编辑JSON参数">
+                  <template #suffix>
+                    <FullscreenOutlined style="cursor: pointer;" @click="openExtraParamsModal" />
+                  </template>
+                </a-input>
+                <div style="margin-top: 4px; color: #999; font-size: 12px; line-height: 1.5;">
+                  按厂家不同支持以下参数（其它键忽略）：<br/>
+                  • Qwen：<code>"image_url":"图片地址"</code>（qwen-vl-ocr 等视觉模型）、<code>"incremental_output":true</code>（qwen3.5-plus 等需流式增量）、<code>"enable_thinking":true</code>（思考开关）<br/>
+                  • DeepSeek：<code>"thinking":{"type":"enabled"}</code>（deepseek-v4-pro 等混合推理模型开关）、<code>"reasoning_effort":"high"</code>（思考强度，"high"/"max"）
+                </div>
+                <a-modal v-model:open="extraParamsVisible" title="编辑额外参数" width="600px" @ok="saveExtraParams" destroyOnClose>
+                  <JCodeEditor v-model:value="extraParamsTemp"  language="javascript" fullScreen height="500px" />
+                </a-modal>
               </template>
 
               <template #modelName="{ model, field }">
@@ -66,10 +83,11 @@
                       <div style="display: flex;justify-content: space-between;">
                         <span>{{label}}</span>
                         <div>
-                          <a-tag v-if="type && type.indexOf('text') != -1" color="#E8D7C3">文本</a-tag>
-                          <a-tag v-if="type && type.indexOf('image') != -1" color="#C3D9DC">图像分析</a-tag>
-                          <a-tag v-if="type && type.indexOf('vector') != -1" color="#D4E0D8">向量</a-tag>
-                          <a-tag v-if="type && type.indexOf('embeddings') != -1" color="#FFEBD3">文本嵌入</a-tag>
+                          <a-tag v-if="type && type.split(',').includes('text')" color="#E8D7C3">文本</a-tag>
+                          <a-tag v-if="type && type.split(',').includes('imageGen')" color="#FFEBD3">图像生成</a-tag>
+                          <a-tag v-if="type && type.split(',').includes('image')" color="#C3D9DC">图像分析</a-tag>
+                          <a-tag v-if="type && type.split(',').includes('vector')" color="#D4E0D8">向量</a-tag>
+                          <a-tag v-if="type && type.split(',').includes('embeddings')" color="#FFEBD3">文本嵌入</a-tag>
                         </div>
                       </div>
                     </a-tooltip>
@@ -77,6 +95,7 @@
                 </AutoComplete>
               </template>
             </BasicForm>
+            <a-alert v-if="!modelActivate" message="模型未激活，请通过下方「保存并激活」按钮激活当前模型" type="warning" show-icon />
           </div>
         </a-tab-pane>
         <a-tab-pane :key="2"  v-if="modelParamsShow">
@@ -96,9 +115,10 @@
 
     </div>
     <template v-if="dataIndex === 'add' || dataIndex === 'edit'" #footer>
-      <a-button @click="test" :loading="testLoading">测试</a-button>
       <a-button @click="cancel">关闭</a-button>
-      <a-button @click="save" type="primary">保存</a-button>
+      <a-button @click="test" v-if="modelActivate" :loading="testLoading" type="default">测试连接</a-button>
+      <a-button @click="save" type="primary" ghost="true">保存</a-button>
+      <a-button @click="test(false)" v-if="!modelActivate" :loading="testLoading" type="primary" >保存并激活</a-button>
     </template>
     <template v-else #footer> </template>
   </BasicModal>
@@ -117,7 +137,10 @@
   import { formSchema, imageList } from '../model.data';
   import { editModel, queryById, saveModel, testConn } from '../model.api';
   import { useMessage } from '/@/hooks/web/useMessage';
+  const {createMessage: $message, createConfirm} = useMessage();
+  import { FullscreenOutlined } from '@ant-design/icons-vue';
   import AiModelSeniorForm from './AiModelSeniorForm.vue';
+  import JCodeEditor from '/@/components/Form/src/jeecg/components/JCodeEditor.vue';
   import { cloneDeep } from "lodash-es";
   export default {
     name: 'AddModelModal',
@@ -126,6 +149,8 @@
       BasicModal,
       AiModelSeniorForm,
       AutoComplete,
+      JCodeEditor,
+      FullscreenOutlined,
     },
     emits: ['success', 'register'],
     setup(props, { emit }) {
@@ -159,6 +184,43 @@
       const modelParamsRef = ref();
       //测试按钮loading状态
       const testLoading = ref<boolean>(false);
+      //模型是否已激活
+      const modelActivate = ref<boolean>(false);
+      //特殊参数
+      const extraParamsVisible = ref<boolean>(false);
+      const extraParamsTemp = ref<string>('');
+
+      /**
+       * 打开特殊参数编辑弹窗
+       */
+      function openExtraParamsModal() {
+        const formVal = getFieldsValue();
+        let val = formVal.extraParams || '';
+        if (val) {
+          try {
+            val = JSON.stringify(JSON.parse(val), null, 2);
+          } catch (e) {}
+        }
+        extraParamsTemp.value = val;
+        extraParamsVisible.value = true;
+      }
+
+      /**
+       * 保存特殊参数
+       */
+      function saveExtraParams() {
+        const val = extraParamsTemp.value;
+        if (val) {
+          try {
+            JSON.parse(val);
+          } catch (e) {
+            $message.error('JSON格式不正确，请检查');
+            return;
+          }
+        }
+        setFieldsValue({ extraParams: val });
+        extraParamsVisible.value = false;
+      }
 
       const getImage = (name) => {
         return imageList.value[name];
@@ -169,17 +231,20 @@
       }
 
       //表单配置
-      const [registerForm, { resetFields, setFieldsValue, validate, clearValidate }] = useForm({
+      const [registerForm, { resetFields, setFieldsValue, getFieldsValue, validate, clearValidate }] = useForm({
         schemas: formSchema,
         showActionButtonGroup: false,
         layout: 'vertical',
         wrapperCol: { span: 24 },
+        labelCol: { span: 24 },
       });
 
       //注册modal
       const [registerModal, { closeModal, setModalProps }] = useModalInner(async (data) => {
         activeKey.value = 1;
         modelParamsShow.value = false;
+        // 【LHZP-1487】打开新弹窗时重置测试连接 loading，避免上一个慢请求关闭后残留状态
+        testLoading.value = false;
         if(dataIndex.value !== 'list') {
           //重置表单
           await resetFields();
@@ -197,6 +262,9 @@
               if(credential.apiKey){
                 values.result.apiKey = credential.apiKey;
               }
+              if (credential.httpVersionOne) {
+                values.result.httpVersionOne = credential.httpVersionOne;
+              }
             }
             let provider = values.result.provider;
             let data = model.data.filter((item) => {
@@ -209,8 +277,18 @@
             if(values.result.modelType && values.result.modelType === 'LLM'){
               modelParamsShow.value = true;
             }
+            if (values.result.activateFlag) {
+              modelActivate.value = true;
+            }else{
+              modelActivate.value = false;
+            }
             if(values.result.modelParams){
-              modelParams.value = JSON.parse(values.result.modelParams)
+              let allParams = JSON.parse(values.result.modelParams);
+              if (allParams.extraParams) {
+                values.result.extraParams = JSON.stringify(allParams.extraParams, null, 2);
+                delete allParams.extraParams;
+              }
+              modelParams.value = allParams;
             }
             modelTypeDisabled.value = true;
             //表单赋值
@@ -226,6 +304,7 @@
           initModelProvider();
           dataIndex.value = 'list';
           modelNameAddOption.value = [];
+          modelActivate.value = false;
         }
       });
 
@@ -255,20 +334,27 @@
        */
       function handleChange(value) {
         if ('all' == value) {
-          modelTypeList.value = model.data;
+          modelTypeList.value = sortModelProviders(model.data);
           return;
         }
         let data = model.data.filter((item) => {
           return item.type.includes(value);
         });
-        modelTypeList.value = data;
+        modelTypeList.value = sortModelProviders(data);
+      }
+
+      /**
+       * 按热度和供应商分类顺序展示
+       */
+      function sortModelProviders(data) {
+        return [...data].sort((first, second) => first.sort - second.sort);
       }
 
       /**
        * 初始化模型提供者
        */
       function initModelProvider() {
-        modelTypeList.value = model.data;
+        modelTypeList.value = sortModelProviders(model.data);
       }
 
       /**
@@ -295,13 +381,29 @@
           let values = await validate();
           let credential = {
             apiKey: values.apiKey,
-            secretKey: values.secretKey
+            secretKey: values.secretKey,
+            httpVersionOne: values.httpVersionOne,
           }
+          let params = {};
           if(modelParamsRef.value){
-            let modelParams = modelParamsRef.value.emitChange();
-            if(modelParams){
-              values.modelParams = JSON.stringify(modelParams);
+            let seniorParams = modelParamsRef.value.emitChange();
+            if(seniorParams){
+              params = { ...seniorParams };
             }
+          }
+          if (values.extraParams) {
+            try {
+              params.extraParams = JSON.parse(values.extraParams);
+            } catch(e) {}
+          }
+          if (Object.keys(params).length > 0) {
+            values.modelParams = JSON.stringify(params);
+          }
+          delete values.extraParams;
+          if(modelActivate.value){
+            values.activateFlag = 1
+          }else{
+            values.activateFlag = 0;
           }
           values.credential = JSON.stringify(credential);
           //新增
@@ -330,31 +432,52 @@
       function cancel() {
         dataIndex.value = 'list';
         closeModal();
+        emit('success');
       }
 
       /**
        * 测试连接
        */
-      async function test() {
+      async function test(onlyTest = false) {
         try {
           testLoading.value = true;
           let values = await validate();
           let credential = {
             apiKey: values.apiKey,
             secretKey: values.secretKey,
+            httpVersionOne: values.httpVersionOne,
           };
+          let params = {};
           if (modelParamsRef.value) {
-            let modelParams = modelParamsRef.value.emitChange();
-            if (modelParams) {
-              values.modelParams = JSON.stringify(modelParams);
+            //update-begin---author:wangshuai---date:2026-03-20---for:【issues/8】保存激活qwen-vl-ocr模型报错---
+            let seniorParams = modelParamsRef.value.emitChange();
+            if (seniorParams) {
+              params = { ...seniorParams };
+            //update-end---author:wangshuai---date:2026-03-20---for:【issues/8】保存激活qwen-vl-ocr模型报错---
             }
           }
+          if (values.extraParams) {
+            try {
+              params.extraParams = JSON.parse(values.extraParams);
+            } catch(e) {}
+          }
+          if (Object.keys(params).length > 0) {
+            values.modelParams = JSON.stringify(params);
+          }
+          delete values.extraParams;
           values.credential = JSON.stringify(credential);
           if (!values.provider) {
             values.provider = modelData.value.value;
           }
           //测试
-          await testConn(values);
+          await testConn(values).then(async (result) => {
+            if(onlyTest){
+              $message.success('测试连接成功');
+              return true;
+            }
+            modelActivate.value = true;
+            await save();
+          });
         } catch (e) {
           if (e.hasOwnProperty('errorFields')) {
             activeKey.value = 1;
@@ -379,6 +502,11 @@
           modelParamsShow.value = true;
         }else{
           modelParamsShow.value = false;
+        }
+        if(value === "IMAGE" && modelData.value.baseImageUrl){
+          setFieldsValue({ 'baseUrl': modelData.value.baseImageUrl })
+        } else if(modelData.value.baseUrl) {
+          setFieldsValue({ 'baseUrl': modelData.value.baseUrl })
         }
       }
 
@@ -424,11 +552,16 @@
         activeKey,
         modelParams,
         modelParamsShow,
+        modelActivate,
         modelParamsRef,
         filterOption,
         getTitle,
         test,
         testLoading,
+        extraParamsVisible,
+        extraParamsTemp,
+        openExtraParamsModal,
+        saveExtraParams,
       };
     },
   };
@@ -460,6 +593,7 @@
           width: 32px;
           height: 32px;
           margin-right: 12px;
+          object-fit: contain;
         }
         .header-text {
           width: calc(100% - 80px);

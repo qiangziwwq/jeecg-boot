@@ -35,7 +35,8 @@
         </a-row>
       </div>
     </div>
-    <LinkTableListModal @register="registerListModal" :multi="multi" :id="popTableName" @success="addCard" />
+    <LinkTableListModal v-if="queryMode === 'online'" @register="registerListModal" :multi="multi" :id="popTableName" @success="addCard" />
+    <AllTableListModal v-else @register="registerListModal" :tableName="tableName" :textField="textField" :valueField="valueField" :imageField="imageField" :multi="multi" @success="addCard" />
   </div>
 </template>
 
@@ -69,11 +70,14 @@
       detail: propTypes.bool.def(false),
       // 图片字段
       imageField: propTypes.string.def(''),
+      // 查询模式：'online'（仅限 Online 表单配置的表）| 'table'（数据库中的所有表）
+      queryMode: propTypes.string.def('online'),
     },
     components: {
       PlusOutlined,
       MinusCircleFilled,
       LinkTableListModal: createAsyncComponent(() => import('./components/LinkTableListModal.vue'), { loading: true }),
+      AllTableListModal: createAsyncComponent(() => import('./components/AllTableListModal.vue'), { loading: true }),
     },
     emits: ['change', 'update:value'],
     setup(props, { emit }) {
@@ -147,17 +151,15 @@
       function handleAddRecord(e) {
         prevent(e);
         openListModal(true, {
-          // update-begin--author:liaozhiyang---date:20240517---for：【TV360X-43】修复关联记录可以添加重复数据
+          // 代码逻辑说明: 【TV360X-43】修复关联记录可以添加重复数据
           selectedRowKeys: selectRecords.value.map((item) => item.id),
           selectedRows: [...selectRecords.value],
-          // update-end--author:liaozhiyang---date:20240517---for：【TV360X-43】修复关联记录可以添加重复数据
         });
       }
 
       function addCard(data) {
-        // update-begin--author:liaozhiyang---date:20240517---for：【TV360X-43】修复关联记录可以添加重复数据
+        // 代码逻辑说明: 【TV360X-43】修复关联记录可以添加重复数据
         let arr = [];
-        // update-end--author:liaozhiyang---date:20240517---for：【TV360X-43】修复关联记录可以添加重复数据
         for (let item of data) {
           let temp = { ...item };
           transData(temp);
@@ -230,17 +232,15 @@
       );
 
       onMounted(() => {
-        // update-begin--author:liaozhiyang---date:20240522---for：【TV360X-281】分辨率小时关联记录文字被图片挤没了
+        // 代码逻辑说明: 【TV360X-281】分辨率小时关联记录文字被图片挤没了
         if (tableLinkCardRef.value.offsetWidth < 250) {
           fixedSpan.value = 24;
         }
-        // update-end--author:liaozhiyang---date:20240522---for：【TV360X-281】分辨率小时关联记录文字被图片挤没了
       });
-      // update-begin--author:liaozhiyang---date:20240529---for：【TV360X-389】下拉和卡片关联记录图裂开给个默认图片
+      // 代码逻辑说明: 【TV360X-389】下拉和卡片关联记录图裂开给个默认图片
       const handleImageError = (event) => {
         event.target.src = placeholderImage;
       };
-      // update-end--author:liaozhiyang---date:20240529---for：【TV360X-389】下拉和卡片关联记录图裂开给个默认图片
 
       return {
         popTableName,

@@ -106,7 +106,7 @@
       const userStore = useUserStore();
       const { getShowTopMenu, getShowHeaderTrigger, getSplit, getIsMixMode, getMenuWidth, getIsMixSidebar } = useMenuSetting();
       const { getUseErrorHandle, getShowSettingButton, getSettingButtonPosition, getAiIconShow } = useRootSetting();
-      const { title } = useGlobSetting();
+      const { title, isQiankunMicro } = useGlobSetting();
 
       const {
         getHeaderTheme,
@@ -133,6 +133,8 @@
             [`${prefixCls}--fixed`]: props.fixed,
             [`${prefixCls}--mobile`]: unref(getIsMobile),
             [`${prefixCls}--${theme}`]: theme,
+            // 【JEECG作为乾坤子应用】
+            [`${prefixCls}--qiankun-micro`]: isQiankunMicro,
           },
         ];
       });
@@ -171,13 +173,11 @@
       const loginSelectRef = ref();
 
       function showLoginSelect() {
-        //update-begin---author:liusq  Date:20220101  for：判断登录进来是否需要弹窗选择租户----
         //判断是否是登陆进来
         const loginInfo = toRaw(userStore.getLoginInfo) || {};
         if (!!loginInfo.isLogin) {
           loginSelectRef.value.show(loginInfo);
         }
-        //update-end---author:liusq  Date:20220101  for：判断登录进来是否需要弹窗选择租户----
       }
 
       function loginSelectOk() {
@@ -223,25 +223,23 @@
 </script>
 <style lang="less">
   @import './index.less';
-  //update-begin---author:scott ---date:2022-09-30  for：默认隐藏顶部菜单面包屑-----------
   //顶部欢迎语展示样式
   @prefix-cls: ~'@{namespace}-layout-header';
-  
+
   .ant-layout .@{prefix-cls} {
     display: flex;
     padding: 0 8px;
-    // update-begin--author:liaozhiyang---date:20240407---for：【QQYUN-8762】顶栏高度
+    // 代码逻辑说明: 【QQYUN-8762】顶栏高度
     height: @header-height;
-    // update-end--author:liaozhiyang---date:20240407---for：【QQYUN-8762】顶栏高度
     align-items: center;
-    
+
     .headerIntroductionClass {
       margin-right: 4px;
       margin-bottom: 2px;
       border-bottom: 0px;
       border-left: 0px;
     }
-    
+
     &--light {
       .headerIntroductionClass {
         color: #000;
@@ -256,6 +254,5 @@
         color: rgba(255, 255, 255, 1);
       }
     }
-    //update-end---author:scott ---date::2022-09-30  for：默认隐藏顶部菜单面包屑--------------
   }
 </style>

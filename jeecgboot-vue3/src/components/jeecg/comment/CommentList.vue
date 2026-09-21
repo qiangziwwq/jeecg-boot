@@ -17,7 +17,8 @@
                   <span>{{ item.toUserId_dictText }}</span>
                   <Tooltip class="comment-last-content" @openChange="(v)=>visibleChange(v, item)">
                     <template #title>
-                      <div v-html="getHtml(lineFeed(item.commentId_dictText))"></div>
+                      <a-spin v-if="item.commentIdLoading" size="small" tip="加载中..." class="jeecg-comment-tooltip-spin" />
+                      <div v-else v-html="getHtml(lineFeed(item.commentId_dictText))"></div>
                     </template>
                     <message-outlined />
                   </Tooltip>
@@ -85,7 +86,7 @@
   // dayjs.extend(customParseFormat);
   
   import { MessageOutlined } from '@ant-design/icons-vue';
-  import { Comment, Tooltip } from 'ant-design-vue';
+  import { Comment, Spin, Tooltip } from 'ant-design-vue';
   import { useUserStore } from '/@/store/modules/user';
   import MyComment from './MyComment.vue';
   import { list, saveOne, deleteOne, useCommentWithFile, useEmojiHtml, queryById, getGloablEmojiIndex } from './useComment';
@@ -115,21 +116,21 @@
     setup(props) {
       const { createMessage } = useMessage();
       const dataList = ref([]);
-      const { userInfo } = useUserStore();
+      const userStore = useUserStore();
       const dayjs = inject('$dayjs')
       const listRef = ref(null);
       /**
        * 获取当前用户名称
        */
       function getMyname() {
-        if (userInfo.realname) {
-          return userInfo.realname.substr(0, 2);
+        if (userStore.getUserInfo.realname) {
+          return userStore.getUserInfo.realname.substr(0, 2);
         }
         return '';
       }
       
       function getMyAvatar(){
-        return userInfo.avatar;
+        return getFileAccessHttpUrl(userStore.getUserInfo.avatar);
       }
       
       // 获取头像
@@ -189,12 +190,10 @@
           let array = data.records;
           console.log(123, array);
           dataList.value = array;
-          // update-begin--author:liaozhiyang---date:20240521---for：【TV360X-18】评论之后滚动条自动触底
           // Number.MAX_SAFE_INTEGER 火狐不兼容改成 10e4
           nextTick(() => {
             listRef.value && listRef.value.$el && (listRef.value.$el.scrollTop = 10e5);
           });
-          // update-end--author:liaozhiyang---date:20240521---for：【TV360X-18】评论之后滚动条自动触底
         }
       }
 
@@ -203,7 +202,7 @@
       async function replyComment(item, content, fileList) {
         console.log(content, item);
         let obj = {
-          fromUserId: userInfo.id,
+          fromUserId: userStore.getUserInfo.id,
           toUserId: item.fromUserId,
           commentId: item.id,
           commentContent: content
@@ -215,7 +214,7 @@
       //评论
       async function sendComment(content, fileList) {
         let obj = {
-          fromUserId: userInfo.id,
+          fromUserId: userStore.getUserInfo.id,
           commentContent: content
         }
         await saveCommentAndFiles(obj, fileList)
@@ -272,6 +271,7 @@
       async function visibleChange(v, item){
         if(v==true){
           if(!item.commentId_dictText){
+            item.commentIdLoading = true;
             const data = await queryById(item.commentId);
             if(data.success == true){
               item.commentId_dictText = data.result.commentContent
@@ -279,14 +279,15 @@
               console.error(data.message)
               item.commentId_dictText='该评论已被删除';
             }
+            item.commentIdLoading = false;
           }
         }
       }
-      // update-begin--author:liaozhiyang---date:20240618---for：【TV360X-932】评论加上换行
+      // 代码逻辑说明: 【TV360X-932】评论加上换行
       const lineFeed = (content) => {
+        if (!content) return '';
         return content.replace(/\n/g, '<br>');
       };
-      // update-end--author:liaozhiyang---date:20240618---for：【TV360X-932】评论加上换行
 
       return {
         dataList,
@@ -349,7 +350,7 @@
   .tx{
     margin-top: 4px;
   }
-  // update-begin--author:liaozhiyang---date:20240327---for：【QQYUN-8639】暗黑主题适配
+  // 代码逻辑说明: 【QQYUN-8639】暗黑主题适配
   .comment-area {
     position: absolute;
     bottom: 0;
@@ -367,5 +368,15 @@
       color:rgba(255, 255, 255, 0.85);
     }
   }
-  // update-end--author:liaozhiyang---date:20240327---for：【QQYUN-8639】暗黑主题适配
+</style>
+
+<style lang="less">
+  .jeecg-comment-tooltip-spin {
+    .ant-spin-dot-item {
+      background-color: rgba(255, 255, 255, 0.85);
+    }
+    .ant-spin-text {
+      color: rgba(255, 255, 255, 0.85);
+    }
+  }
 </style>

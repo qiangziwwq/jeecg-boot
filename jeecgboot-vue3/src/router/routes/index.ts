@@ -5,6 +5,7 @@ import { PAGE_NOT_FOUND_ROUTE, REDIRECT_ROUTE } from '/@/router/routes/basic';
 import { mainOutRoutes } from './mainOut';
 import { PageEnum } from '/@/enums/pageEnum';
 import { t } from '/@/hooks/web/useI18n';
+import { LAYOUT } from '/@/router/constant';
 
 const modules = import.meta.glob('./modules/**/*.ts', { eager: true });
 
@@ -39,7 +40,7 @@ export const LoginRoute: AppRouteRecordRaw = {
   },
 };
 
-//update-begin---author:wangshuai ---date:20220629  for：auth2登录页面路由------------
+// 代码逻辑说明: auth2登录页面路由------------
 export const Oauth2LoginRoute: AppRouteRecordRaw = {
   path: '/oauth2-app/login',
   name: 'oauth2-app-login',
@@ -50,7 +51,6 @@ export const Oauth2LoginRoute: AppRouteRecordRaw = {
     title: t('routes.oauth2.login'),
   },
 };
-//update-end---author:wangshuai ---date:20220629  for：auth2登录页面路由------------
 
 /**
  * 【通过token直接静默登录】流程办理登录页面 中转跳转
@@ -64,5 +64,59 @@ export const TokenLoginRoute: AppRouteRecordRaw = {
     ignoreAuth: true,
   },
 };
+// 代码逻辑说明: 【QQYUN-7967】新增、编辑路由访问
+export const formUrlDetail = {
+  path: '/online/formUrlDetail/:id/:dataId',
+  name: 'formUrlDetail',
+  component: () => import('/@/views/super/online/cgform/auto/default/OnlineFormUrlDetail.vue'),
+  meta: {
+    title: '外部填报表单详情',
+    ignoreAuth: true,
+  },
+};
+
+export const formUrlAdd = {
+  path: '/online/formUrlAdd/:id',
+  name: 'formUrlAdd',
+  component: () => import('/@/views/super/online/cgform/auto/default/OnlineFormUrlAdd.vue'),
+  meta: {
+    title: '外部填报表单新增',
+    ignoreAuth: true,
+  },
+};
+
+export const formUrlEdit = {
+  path: '/online/formUrlEdit/:id/:dataId',
+  name: 'formUrlEdit',
+  component: () => import('/@/views/super/online/cgform/auto/default/OnlineFormUrlEdit.vue'),
+  meta: {
+    title: '外部填报表单编辑',
+    ignoreAuth: true,
+  },
+};
+
+export const formUrlSuccess = {
+  path: '/online/formUrlSuccess',
+  name: 'formUrlSuccess',
+  component: () => import('/@/views/super/online/cgform/auto/default/OnlineFormUrlSuccess.vue'),
+  meta: {
+    title: '外部填报表单成功',
+    ignoreAuth: true,
+  },
+};
+
+
+export const onlinePreview = {
+  path: '/onlinePreview',
+  name: 'online-preview',
+  meta: {
+    title: 'wps文件预览',
+    ignoreAuth: false,
+  },
+  component: () => import('/@/components/onlinePreview/WpsFileView.vue'),
+}
+
+
+
 // Basic routing without permission
-export const basicRoutes = [LoginRoute, RootRoute, ...mainOutRoutes, REDIRECT_ROUTE, PAGE_NOT_FOUND_ROUTE, TokenLoginRoute, Oauth2LoginRoute];
+export const basicRoutes = [LoginRoute, RootRoute, ...mainOutRoutes, REDIRECT_ROUTE, PAGE_NOT_FOUND_ROUTE, TokenLoginRoute, Oauth2LoginRoute, formUrlDetail, formUrlAdd, formUrlEdit, formUrlSuccess, onlinePreview];

@@ -41,6 +41,7 @@
             placeholder="请输入标题"
             @change="handleInputChange"
             @keyup.enter="inputBlur(item)"
+            @blur="inputBlur(item)"
           />
           <span class="title" v-else>{{ item.title }}</span>
           <span class="icon edit" @click.stop="handleEdit(item)" v-if="!item.isEdit && !item.disabled">
@@ -74,7 +75,7 @@
     <div class="left-footer" v-if="source!='chatJs'">
       AI客服由
       <a style="color: #4183c4;margin-left: 2px;margin-right: 2px" href="https://www.qiaoqiaoyun.com/aiCustomerService" target="_blank">
-        敲敲云
+        JEECG AI
       </a>
       提供
     </div>
@@ -112,6 +113,9 @@
   };
   // 失去焦点
   const inputBlur = (item) => {
+    if (!item.isEdit) {
+      return;
+    }
     item.isEdit = false;
     item.title = inputValue;
     defHttp

@@ -112,7 +112,6 @@ public class AiragModel implements Serializable {
     /**
      * 凭证信息
      */
-    @Excel(name = "凭证信息", width = 15)
     @Schema(description = "凭证信息")
     private String credential;
     /**
@@ -121,4 +120,11 @@ public class AiragModel implements Serializable {
     @Excel(name = "模型参数", width = 15)
     @Schema(description = "模型参数")
     private String modelParams;
+
+    /**
+     * 是否激活(0=未激活,1=已激活)
+     */
+    @Excel(name = "是否激活", width = 15)
+    @Schema(description = "是否激活")
+    private Integer activateFlag;
 }

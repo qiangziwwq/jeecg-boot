@@ -10,7 +10,6 @@ import lombok.experimental.Accessors;
 
 import java.io.Serializable;
 import java.util.Date;
-import java.util.List;
 
 /**
  * 接口表
@@ -44,9 +43,22 @@ public class OpenApi  implements Serializable {
     private String requestUrl;
 
     /**
-     * IP 黑名单
+     * IP 白名单
      */
-    private String blackList;
+    private String whiteList;
+
+    //update-begin---author:scott ---date:20260417  for：【PR/9083】OpenAPI新增白名单备注字段-----------
+    /**
+     * 白名单备注说明
+     */
+    private String remarks;
+    //update-end---author:scott ---date:20260417  for：【PR/9083】OpenAPI新增白名单备注字段-----------
+    //update-begin---author:liusq ---date:20260805  for：LHZP-1356 接口描述-----------
+    /**
+     * 接口描述
+     */
+    private String description;
+    //update-end---author:liusq ---date:20260805  for：LHZP-1356 接口描述-----------
     /**
      * 请求头json
      */
@@ -60,7 +72,7 @@ public class OpenApi  implements Serializable {
     /**
      * 目前仅支持json
      */
-    private String body;
+    private String requestBody;
 
     /**
      * 原始接口路径

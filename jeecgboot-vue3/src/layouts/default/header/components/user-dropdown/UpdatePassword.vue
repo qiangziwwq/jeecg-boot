@@ -1,11 +1,11 @@
 <template>
-  <BasicModal v-bind="$attrs" @register="registerModal" :title="title" @ok="handleSubmit" width="600px">
+  <BasicModal v-bind="$attrs" @register="registerModal" :title="title" @ok="handleSubmit" width="500px" :bodyStyle="{ padding: '20px 40px 20px 20px'}">
     <BasicForm @register="registerForm" />
   </BasicModal>
 </template>
 <script lang="ts" setup>
   import { ref, unref } from 'vue';
-  import { rules } from '/@/utils/helper/validator';
+  import { rules, createPasswordValidator } from '/@/utils/helper/validator';
   import { defHttp } from '/@/utils/http/axios';
   import { BasicModal, useModalInner } from '/@/components/Modal';
   import BasicForm from '/@/components/Form/src/BasicForm.vue';
@@ -20,7 +20,7 @@
   const $message = useMessage();
   const formRef = ref();
   const username = ref('');
-  // update-begin--author:liaozhiyang---date:20240124---for：【QQYUN-7970】国际化
+  // 代码逻辑说明: 【QQYUN-7970】国际化
   const title = ref(t('layout.changePassword.changePassword'));
   //表单配置
   const [registerForm, { resetFields, validate, clearValidate }] = useForm({
@@ -43,6 +43,11 @@
             required: true,
             message: t('layout.changePassword.pleaseEnterNewPassword'),
           },
+          //update-begin---author:wangshuai ---date:2026-06-29  for：【QQYUN-16619】根据三级等保开关动态切换校验规则-----------
+          {
+            validator: createPasswordValidator(),
+          },
+          //update-end---author:wangshuai ---date:2026-06-29  for：【QQYUN-16619】根据三级等保开关动态切换校验规则-----------
         ],
       },
       {
@@ -56,7 +61,6 @@
     wrapperCol: null,
     labelWidth: localeStore.getLocale == 'zh_CN' ? 100 : 160,
   });
-  // update-end--author:liaozhiyang---date:20240124---for：【QQYUN-7970】国际化
   //表单赋值
   const [registerModal, { setModalProps, closeModal }] = useModalInner();
 

@@ -1,5 +1,5 @@
 <template>
-  <div class="p-2">
+  <div>
     <BasicModal destroyOnClose @register="registerModal" :canFullscreen="false" width="1000px" @ok="handleOk" @cancel="handleCancel" okText="替换" wrapClassName='ai-rag-generate-prompt-modal'>
       <div class="prompt">
         <div class="prompt-left">
@@ -16,7 +16,14 @@
             </div>
           </div>
           <div class="prompt-left-textarea">
-            <div class="command">指令</div>
+            <div class="command">
+              <span style="margin-right: 5px">指令</span>
+              <a-tooltip title="提示词库">
+                <span @click="openPromptApps" style="color:#1890ff;cursor: pointer">
+                  <Icon icon="ant-design:bulb-outlined" color="#1890ff"></Icon>词库选择
+                </span>
+              </a-tooltip>
+            </div>
             <a-textarea v-model:value="prompt" :autoSize="{ minRows: 8, maxRows: 8 }"></a-textarea>
           </div>
           <a-button @click="generatedPrompt" class="prompt-left-btn" type="primary" :loading="loading">
@@ -50,17 +57,21 @@
       </div>
     </BasicModal>
   </div>
+  <!-- Ai提示词选择弹窗   -->
+  <AiAppPromptMarketModal @register="registerAiPromptSelectModal" @ok="handleAiAppPromptOk"></AiAppPromptMarketModal>
 </template>
 
 <script lang="ts">
   import { ref, unref } from 'vue';
   import BasicModal from '@/components/Modal/src/BasicModal.vue';
-  import { useModalInner } from '@/components/Modal';
+  import {useModal, useModalInner} from '@/components/Modal';
   import { promptGenerate } from '@/views/super/airag/aiapp/AiApp.api';
+  import AiAppPromptMarketModal from "@/views/super/airag/aiapp/components/AiAppPromptMarketModal.vue";
 
   export default {
     name: 'AiAppGeneratedPrompt',
     components: {
+      AiAppPromptMarketModal,
       BasicModal,
     },
     emits: ['ok', 'register'],
@@ -93,13 +104,24 @@
         linux: '你是一个linux专家，擅长解决各种linux相关的问题。',
         content: '你是一个阅读理解大师，可以阅读用户提供的文章，并提炼主要内容输出给用户。',
       });
+      //注册提示词modal
+      const [registerAiPromptSelectModal, { openModal: aiPromptSelectModalOpen }] = useModal();
       //注册modal
       const [registerModal, { closeModal, setModalProps }] = useModalInner(async (data) => {
         content.value = '';
         loading.value = false;
         prompt.value = '';
-        setModalProps({ height: 500 });
+        // update-begin--author:liaozhiyang---date:20260804---for：打开弹窗时禁用「替换」，需等生成完成后再启用
+        setModalProps({ height: 500, okButtonProps: { disabled: true } });
+        // update-end--author:liaozhiyang---date:20260804---for：打开弹窗时禁用「替换」，需等生成完成后再启用
       });
+
+      /**
+       * 设置替换按钮是否可用
+       */
+      function setReplaceEnabled(enabled: boolean) {
+        setModalProps({ okButtonProps: { disabled: !enabled } });
+      }
 
       /**
        * 保存
@@ -116,15 +138,29 @@
       async function generatedPrompt() {
         content.value = '';
         loading.value = true;
-        let readableStream = await promptGenerate({ prompt: prompt.value }).catch(() => {
+        // update-begin--author:liaozhiyang---date:20260804---for：【LHZP-1477】打开弹窗时禁用「替换」，需等生成完成后再启用
+        // 开始生成时禁用「替换」，流式数据全部完成后再启用
+        setReplaceEnabled(false);
+        // update-end--author:liaozhiyang---date:20260804---for：【LHZP-1477】打开弹窗时禁用「替换」，需等生成完成后再启用
+        let readableStream = await promptGenerate({ prompt: encodeURIComponent(prompt.value) }).catch(() => {
             loading.value = false;
         });
+        if (!readableStream) {
+          return;
+        }
         const reader = readableStream.getReader();
         const decoder = new TextDecoder('UTF-8');
         let buffer = '';
         while (true) {
           const { done, value } = await reader.read();
           if (done) {
+            // update-begin--author:liaozhiyang---date:20260804---for：【LHZP-1477】打开弹窗时禁用「替换」，需等生成完成后再启用
+            // 接口流式数据全部接收完成后启用「替换」
+            loading.value = false;
+            if (content.value) {
+              setReplaceEnabled(true);
+            }
+            // update-end--author:liaozhiyang---date:20260804---for：【LHZP-1477】打开弹窗时禁用「替换」，需等生成完成后再启用
             break;
           }
           let result = decoder.decode(value, { stream: true });
@@ -176,6 +212,10 @@
           if (parse.event == 'ERROR') {
             content.value = parse.data.message?parse.data.message:'生成失败，请稍后重试！'
             loading.value = false;
+            // update-begin--author:liaozhiyang---date:20260804---for：【LHZP-1477】打开弹窗时禁用「替换」，需等生成完成后再启用
+            // 生成失败保持「替换」禁用
+            setReplaceEnabled(false);
+            // update-end--author:liaozhiyang---date:20260804---for：【LHZP-1477】打开弹窗时禁用「替换」，需等生成完成后再启用
           }
         } catch (error) {
           console.log('Error parsing update:', error);
@@ -197,6 +237,20 @@
         closeModal();
       }
 
+      /**
+       * 打开提示词库弹窗
+       */
+      function openPromptApps() {
+        aiPromptSelectModalOpen(true,{});
+      }
+      /**
+       * 提示词回调
+       *
+       * @param value
+       */
+      function handleAiAppPromptOk(value) {
+        content.value = value;
+      }
       return {
         registerModal,
         handleOk,
@@ -207,6 +261,9 @@
         loading,
         instructionsClick,
         content,
+        openPromptApps,
+        registerAiPromptSelectModal,
+        handleAiAppPromptOk,
       };
     },
   };
@@ -250,6 +307,8 @@
     .prompt-left-textarea {
       margin-top: 25px;
       .command {
+        display: flex;
+        align-items: center;
         color: #101828;
         line-height: 15px;
         font-weight: 500;

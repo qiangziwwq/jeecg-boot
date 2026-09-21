@@ -51,22 +51,29 @@ public class SysTenantPack implements Serializable {
     @Schema(description = "创建人")
     private String createBy;
 	/**创建时间*/
-	@JsonFormat(timezone = "GMT+8",pattern = "yyyy-MM-dd")
-    @DateTimeFormat(pattern="yyyy-MM-dd")
+	@JsonFormat(timezone = "GMT+8",pattern = "yyyy-MM-dd HH:mm:ss")
+    @DateTimeFormat(pattern="yyyy-MM-dd HH:mm:ss")
     @Schema(description = "创建时间")
     private Date createTime;
 	/**更新人*/
     @Schema(description = "更新人")
     private String updateBy;
 	/**更新时间*/
-	@JsonFormat(timezone = "GMT+8",pattern = "yyyy-MM-dd")
-    @DateTimeFormat(pattern="yyyy-MM-dd")
+	@JsonFormat(timezone = "GMT+8",pattern = "yyyy-MM-dd HH:mm:ss")
+    @DateTimeFormat(pattern="yyyy-MM-dd HH:mm:ss")
     @Schema(description = "更新时间")
     private Date updateTime;
     /**产品包类型(default 默认产品包 custom 自定义产品包)*/
     @Excel(name = "产品包类型", width = 15)
     @Schema(description = "产品包类型")
 	private String packType;
+
+    /**
+     * 是否自动分配给用户(0 否 1是)
+     */
+    @Excel(name = "是否自动分配给用户(0 否 1是)", width = 15)
+    @Schema(description = "是否自动分配给用户")
+    private String izSysn;
     
     /**菜单id 临时字段用于新增编辑菜单id传递*/
     @TableField(exist = false)

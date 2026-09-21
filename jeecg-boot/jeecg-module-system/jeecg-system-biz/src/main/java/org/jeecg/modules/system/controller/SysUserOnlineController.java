@@ -1,9 +1,11 @@
 package org.jeecg.modules.system.controller;
 
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang.StringUtils;
 import org.apache.shiro.SecurityUtils;
+import org.apache.shiro.authz.annotation.RequiresPermissions;
 import org.jeecg.common.api.vo.Result;
 import org.jeecg.common.constant.CacheConstant;
 import org.jeecg.common.constant.CommonConstant;
@@ -20,7 +22,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.web.bind.annotation.*;
 
-import javax.annotation.Resource;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -48,8 +49,10 @@ public class SysUserOnlineController {
     @Resource
     private BaseCommonService baseCommonService;
 
+    @RequiresPermissions("system:online:list")
     @RequestMapping(value = "/list", method = RequestMethod.GET)
     public Result<Page<SysUserOnlineVO>> list(@RequestParam(name="username", required=false) String username,
+                                              @RequestParam(name="realname", required=false) String realname,
                                               @RequestParam(name="pageNo", defaultValue="1") Integer pageNo,@RequestParam(name="pageSize", defaultValue="10") Integer pageSize) {
         Collection<String> keys = redisUtil.scan(CommonConstant.PREFIX_USER_TOKEN + "*");
         List<SysUserOnlineVO> onlineList = new ArrayList<SysUserOnlineVO>();
@@ -57,22 +60,25 @@ public class SysUserOnlineController {
             String token = (String)redisUtil.get(key);
             if (StringUtils.isNotEmpty(token)) {
                 SysUserOnlineVO online = new SysUserOnlineVO();
-                online.setToken(token);
+                // 强退需要使用 Redis key 中的原始 Token，不能使用续期后的 value
+                String originalToken = key.substring(CommonConstant.PREFIX_USER_TOKEN.length());
+                online.setToken(originalToken);
                 //TODO 改成一次性查询
                 LoginUser loginUser = sysBaseApi.getUserByName(JwtUtil.getUsername(token));
                 if (loginUser != null && !"_reserve_user_external".equals(loginUser.getUsername())) {
-                    //update-begin---author:wangshuai ---date:20220104  for：[JTC-382]在线用户查询无效------------
                     //验证用户名是否与传过来的用户名相同
                     boolean isMatchUsername=true;
                     //判断用户名是否为空，并且当前循环的用户不包含传过来的用户名，那么就设成false
                     if(oConvertUtils.isNotEmpty(username) && !loginUser.getUsername().contains(username)){
                         isMatchUsername = false;
                     }
+                    if(oConvertUtils.isNotEmpty(realname) && !StringUtils.contains(loginUser.getRealname(), realname)){
+                        isMatchUsername = false;
+                    }
                     if(isMatchUsername){
                         BeanUtils.copyProperties(loginUser, online);
                         onlineList.add(online);
                     }
-                    //update-end---author:wangshuai ---date:20220104  for：[JTC-382]在线用户查询无效------------
                 }
             }
         }
@@ -102,6 +108,7 @@ public class SysUserOnlineController {
     /**
      * 强退用户
      */
+    @RequiresPermissions("system:online:forceLogout")
     @RequestMapping(value = "/forceLogout",method = RequestMethod.POST)
     public Result<Object> forceLogout(@RequestBody SysUserOnlineVO online) {
         //用户退出逻辑

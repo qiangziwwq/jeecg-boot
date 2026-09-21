@@ -7,12 +7,16 @@ import VXETablePluginAntd from 'vxe-table-plugin-antd';
 import 'vxe-pc-ui/lib/style.css';
 import 'vxe-table/lib/style.css';
 
-import JVxeTable from './JVxeTable';
 import { getEventPath } from '/@/utils/common/compUtils';
 import { registerAllComponent } from './utils/registerUtils';
 import { getEnhanced } from './utils/enhancedUtils';
+import type { JVxeTypes } from './types/JVxeTypes';
+export interface RegisterJVxeTableOptions {
+  /** 仅注册指定的内置类型；不传则注册全部内置组件 */
+  builtinComponents?: JVxeTypes[];
+}
 
-export function registerJVxeTable(app: App) {
+export async function registerJVxeTable(app: App) {
   // VXETable 全局配置
   const VXETableSettings = {
     // z-index 起始值
@@ -31,7 +35,6 @@ export function registerJVxeTable(app: App) {
   // 执行注册方法
   app.use(VxeUIAll);
   app.use(VXETable, VXETableSettings);
-  app.component('JVxeTable', JVxeTable);
 }
 
 
@@ -42,12 +45,11 @@ export function registerJVxeTable(app: App) {
 function preventClosingPopUp(this: any, params) {
   // 获取组件增强
   let col = params.column.params;
-  // update-begin--author:liaozhiyang---date:20250429---for：【issues/8178】使用原生vxe-table组件编辑模式下失去焦点报错
+  // 代码逻辑说明: 【issues/8178】使用原生vxe-table组件编辑模式下失去焦点报错
   if (col === undefined) {
     // 说明使用的是纯原生的vxe-table
     return;
   }
-  // update-end--author:liaozhiyang---date:20250429---for：【issues/8178】使用原生vxe-table组件编辑模式下失去焦点报错
   let { $event } = params;
   const interceptor = getEnhanced(col.type).interceptor;
   // 执行增强
@@ -68,7 +70,14 @@ function preventClosingPopUp(this: any, params) {
       return false;
     }
     // 点击的标签是JPopup的弹出层、部门选择、用户选择
-    if (className.includes('j-popup-modal') || className.includes('j-depart-select-modal') || className.includes('j-user-select-modal')) {
+    if (
+      className.includes('j-popup-modal') ||
+      className.includes('j-depart-select-modal') ||
+      className.includes('j-user-select-modal') ||
+      className.includes('jeecg-online-pop-list-modal') ||
+      className.includes('jeecg-online-pop-modal') ||
+      className.includes('jeecg-all-table-pop-list-modal')
+    ) {
       return false;
     }
     // 点击的是日期选择器

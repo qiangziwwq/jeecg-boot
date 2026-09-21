@@ -3,9 +3,12 @@
     v-bind="attrs_"
     v-model:value="state"
     :options="getOptions"
+    show-search
+    :filter-option="getFilterOption"
     @change="handleChange"
     @dropdownVisibleChange="handleFetch"
     @popupScroll="handlePopupScroll"
+    @search="handleSearch"
   >
     <template #[item]="data" v-for="item in Object.keys($slots)">
       <slot :name="item" v-bind="data || {}"></slot>
@@ -64,6 +67,7 @@
       labelField: propTypes.string.def('label'),
       valueField: propTypes.string.def('value'),
       immediate: propTypes.bool.def(true),
+      searchDebounce: propTypes.number.def(300),
     },
     emits: ['options-change', 'change'],
     setup(props, { emit }) {
@@ -72,19 +76,28 @@
       const isFirstLoad = ref(true);
       const emitData = ref<any[]>([]);
       const attrs = useAttrs();
+      const searchValue = ref('');
+      let searchTimer: ReturnType<typeof setTimeout> | null = null;
       const { t } = useI18n();
-      // update-begin--author:liusq---date:20250407---for：【QQYUN-11831】ApiSelect 分页下拉方案 #7883
+      // 代码逻辑说明: 【QQYUN-11831】ApiSelect 分页下拉方案 #7883
       const hasMore = ref(true);
       const pagination = ref({
         pageNo: 1,
         pageSize: 10,
         total: 0,
       });
-      const defPageConfig = { isPage: false, pageField: 'pageNo', pageSizeField: 'pageSize', totalField: 'total', listField: 'records' };
+      // update-begin--author:liaozhiyang---date:20260617---for:【issue/9689】开启分页 + 搜索,过滤不到未加载数据
+      const defPageConfig = { isPage: false, pageField: 'pageNo', pageSizeField: 'pageSize', totalField: 'total', listField: 'records', searchField: '' };
+      const mergedPageConfig = computed(() => ({ ...defPageConfig, ...props.pageConfig }));
+      const isRemoteSearch = computed(() => {
+        const { isPage, searchField } = mergedPageConfig.value;
+        return !!(isPage && searchField);
+      });
+      // update-end--author:liaozhiyang---date:20260617---for:【issue/9689】开启分页 + 搜索,过滤不到未加载数据
       // update-end--author:liusq---date:20250407---for：【QQYUN-11831】ApiSelect 分页下拉方案 #7883
       // Embedded in the form, just use the hook binding to perform form verification
       const [state, setState] = useRuleFormItem(props, 'value', 'change', emitData);
-      // update-begin--author:liaozhiyang---date:20230830---for：【QQYUN-6308】解决警告
+      // 代码逻辑说明: 【QQYUN-6308】解决警告
       let vModalValue: any;
       const attrs_ = computed(() => {
         let obj: any = unref(attrs) || {};
@@ -92,9 +105,9 @@
           vModalValue = obj['onUpdate:value'];
           delete obj['onUpdate:value'];
         }
-        // update-begin--author:liaozhiyang---date:20231017---for：【issues/5467】ApiSelect修复覆盖了用户传递的方法
+        // 代码逻辑说明: 【issues/5467】ApiSelect修复覆盖了用户传递的方法
         if (obj['filterOption'] === undefined) {
-          // update-begin--author:liaozhiyang---date:20230904---for：【issues/5305】无法按照预期进行搜索
+          // 代码逻辑说明: 【issues/5305】无法按照预期进行搜索
           obj['filterOption'] = (inputValue, option) => {
             if (typeof option['label'] === 'string') {
               return option['label'].toLowerCase().indexOf(inputValue.toLowerCase()) != -1;
@@ -102,19 +115,19 @@
               return true;
             }
           };
-          // update-end--author:liaozhiyang---date:20230904---for：【issues/5305】无法按照预期进行搜索
         }
-        // update-end--author:liaozhiyang---date:20231017---for：【issues/5467】ApiSelect修复覆盖了用户传递的方法
         return obj;
       });
-      // update-begin--author:liaozhiyang---date:20230830---for：【QQYUN-6308】解决警告
+      // 代码逻辑说明: 【QQYUN-6308】解决警告
       const getOptions = computed(() => {
         const { labelField, valueField, numberToString } = props;
         return unref(options).reduce((prev, next: Recordable) => {
           if (next) {
             const value = next[valueField];
             prev.push({
-              ...omit(next, [labelField, valueField]),
+              // update-begin--author:liaozhiyang---date:20260226---for:【issues/9326】ApiSelect组件，返回数据中包含 options 这个名称导致组件渲染失败
+              ...omit(next, [labelField, valueField, 'options']),
+              // update-end--author:liaozhiyang---date:20260226---for:【issues/9326】ApiSelect组件，返回数据中包含 options 这个名称导致组件渲染失败
               label: next[labelField],
               value: numberToString ? `${value}` : value,
             });
@@ -122,11 +135,21 @@
           return prev;
         }, [] as OptionsItem[]);
       });
-      // update-begin--author:liaozhiyang---date:20240823---for：【issues/6999】ApiSelect联动更新字段不生效（代码还原）
-      watchEffect(() => {
-        props.immediate && fetch();
-      });
-      // update-end--author:liaozhiyang---date:20240823---for：【issues/6999】ApiSelect联动更新字段不生效（代码还原）
+      // 代码逻辑说明: 【issues/8527】apiSelect分页加载重复请求
+      watch(
+        () => props.immediate,
+        () => {
+          props.immediate && fetch();
+        },
+        { immediate: true }
+      );
+      watch(
+        () => [props.api, props.pageConfig, props.resultField, props.params],
+        () => {
+          props.immediate && fetch();
+        },
+        { deep: true }
+      );
 
       watch(
         () => props.params,
@@ -139,28 +162,55 @@
       watchEffect(() => {
         props.value && handleFetch();
       });
-
+      /**
+       * 筛选流程
+       * @param input
+       * @param option
+       */
+      const filterOption = (input: string, option: any) => {
+        return option.value.toLowerCase().indexOf(input.toLowerCase()) >= 0 || option.label.indexOf(input) >= 0;
+      };
+      // update-begin--author:liaozhiyang---date:20260617---for:【issue/9689】开启分页 + 搜索,过滤不到未加载数据
+      const getFilterOption = computed(() => {
+        return isRemoteSearch.value ? false : filterOption;
+      });
+      function handleSearch(input: string) {
+        if (!isRemoteSearch.value) return;
+        if (searchTimer) clearTimeout(searchTimer);
+        searchTimer = setTimeout(() => {
+          if (searchValue.value === input) return;
+          searchValue.value = input;
+          pagination.value.pageNo = 1;
+          hasMore.value = true;
+          fetch();
+        }, props.searchDebounce);
+      }
+      // update-end--author:liaozhiyang---date:20260617---for:【issue/9689】开启分页 + 搜索,过滤不到未加载数据
       async function fetch() {
         const api = props.api;
         if (!api || !isFunction(api)) return;
-        // update-begin--author:liusq---date:20250407---for：【QQYUN-11831】ApiSelect 分页下拉方案 #7883
+        // 代码逻辑说明: 【QQYUN-11831】ApiSelect 分页下拉方案 #7883
         if (!props.pageConfig.isPage || pagination.value.pageNo == 1) {
           options.value = [];
         }
         try {
           loading.value = true;
-          let { isPage, pageField, pageSizeField, totalField, listField } = { ...defPageConfig, ...props.pageConfig };
+          let { isPage, pageField, pageSizeField, totalField, listField, searchField } = mergedPageConfig.value;
           let params = isPage
             ? { ...props.params, [pageField]: pagination.value.pageNo, [pageSizeField]: pagination.value.pageSize }
             : { ...props.params };
-          // update-end--author:liusq---date:20250407---for：【QQYUN-11831】ApiSelect 分页下拉方案 #7883
+          // update-begin--author:liaozhiyang---date:20260617---for:【issue/9689】开启分页 + 搜索,过滤不到未加载数据
+          // 携带远程搜索关键字到后端
+          if (isPage && searchField && searchValue.value) {
+            params[searchField] = searchValue.value;
+          }
+          // update-end--author:liaozhiyang---date:20260617---for:【issue/9689】开启分页 + 搜索,过滤不到未加载数据
           const res = await api(params);
           if (isPage) {
-            // update-begin--author:liusq---date:20250407---for：【QQYUN-11831】ApiSelect 分页下拉方案 #7883
+            // 代码逻辑说明: 【QQYUN-11831】ApiSelect 分页下拉方案 #7883
             options.value = [...options.value, ...res[listField]];
             pagination.value.total = res[totalField] || 0;
             hasMore.value = res[totalField] ? options.value.length < res[totalField] : res[listField] < pagination.value.pageSize;
-            // update-end--author:liusq---date:20250407---for：【QQYUN-11831】ApiSelect 分页下拉方案 #7883
           } else {
             if (Array.isArray(res)) {
               options.value = res;
@@ -176,20 +226,15 @@
           console.warn(error);
         } finally {
           loading.value = false;
-          //--@updateBy-begin----author:liusq---date:20210914------for:判断选择模式，multiple多选情况下的value值空的情况下需要设置为数组------
-          unref(attrs).mode == 'multiple' && !Array.isArray(unref(state)) && setState([]);
-          //--@updateBy-end----author:liusq---date:20210914------for:判断选择模式，multiple多选情况下的value值空的情况下需要设置为数组------
-
-          //update-begin---author:wangshuai ---date:20230505  for：初始化value值，如果是多选字符串的情况下显示不出来------------
+          ['multiple', 'tags'].includes(unref(attrs).mode) && !Array.isArray(unref(state)) && setState([]);
           initValue();
-          //update-end---author:wangshuai ---date:20230505  for：初始化value值，如果是多选字符串的情况下显示不出来------------
         }
       }
 
       function initValue() {
         let value = props.value;
-        // update-begin--author:liaozhiyang---date:20250407---for：【issues/8037】初始化值单选的值被错误地写入数组值
-        if (unref(attrs).mode == 'multiple') {
+        // 代码逻辑说明: 【issues/8037】初始化值单选的值被错误地写入数组值
+        if (['multiple', 'tags'].includes(unref(attrs).mode)) {
           if (value && typeof value === 'string' && value != 'null' && value != 'undefined') {
             state.value = value.split(',');
           } else if (isNumber(value)) {
@@ -198,7 +243,6 @@
         } else {
           state.value = value;
         }
-        // update-end--author:liaozhiyang---date:20250407---for：【issues/8037】初始化值单选的值被错误地写入数组值
       }
 
       async function handleFetch() {
@@ -216,7 +260,6 @@
         vModalValue && vModalValue(_);
         emitData.value = args;
       }
-      // update-begin--author:liusq---date:20250407---for：【QQYUN-11831】ApiSelect 分页下拉方案 #7883
       // 滚动加载更多
       function handlePopupScroll(e) {
         const { scrollTop, scrollHeight, clientHeight } = e.target;
@@ -226,8 +269,7 @@
           fetch();
         }
       }
-      // update-end--author:liusq---date:20250407---for：【QQYUN-11831】ApiSelect 分页下拉方案 #7883
-      return { state, attrs_, attrs, getOptions, loading, t, handleFetch, handleChange, handlePopupScroll };
+      return { state, attrs_, attrs, getOptions, loading, t, handleFetch, handleChange, handlePopupScroll, filterOption, getFilterOption, handleSearch };
     },
   });
 </script>

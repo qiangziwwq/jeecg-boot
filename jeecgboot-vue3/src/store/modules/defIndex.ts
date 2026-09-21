@@ -9,8 +9,7 @@ interface DefIndexState {
   component: string
 }
 
-export const useDefIndexStore = defineStore({
-  id: 'defIndex',
+export const useDefIndexStore = defineStore('defIndex', {
   state: (): DefIndexState => ({
     url: '',
     component: '',
@@ -67,7 +66,8 @@ export const defIndexApi = {
   async update(url: string, component: string, isRoute: boolean) {
     let apiUrl = '/sys/sysRoleIndex/updateDefIndex'
     apiUrl += '?url=' + url
-    apiUrl += '&component=' + component
+    // 代码逻辑说明: 设置默认首页接口传参修改,增加encodeURIComponent，防止{{ window._CONFIG['domianURL'] }}/**保存不上
+    apiUrl += '&component=' + encodeURIComponent(component)
     apiUrl += '&isRoute=' + isRoute
     return await defHttp.put({url: apiUrl});
   },

@@ -11,6 +11,22 @@
       @change="onFileChange"
       @preview="onFilePreview"
     >
+      <template #removeIcon="{ file }">
+        <a-popconfirm
+          v-if="removeConfirm"
+          :title="`删除这${isImageMode ? '张图片' : '个文件'}？`"
+          placement="topRight"
+          overlayClassName="j-upload-remove-popconfirm"
+          okText="删除"
+          cancelText="取消"
+          @confirm="confirmRemove(file)"
+        >
+          <span class="j-upload-remove-trigger" :data-file-uid="file.uid" @click.stop>
+            <Icon icon="ant-design:delete-outlined" />
+          </span>
+        </a-popconfirm>
+        <Icon v-else icon="ant-design:delete-outlined" />
+      </template>
       <template v-if="isImageMode">
         <div v-if="!isMaxCount">
           <Icon icon="ant-design:plus-outlined" />
@@ -26,9 +42,8 @@
 </template>
 
 <script lang="ts" setup>
-  import { ref, reactive, computed, watch, nextTick, createApp,unref } from 'vue';
+  import { ref, computed, watch, nextTick, createApp,unref } from 'vue';
   import { Icon } from '/@/components/Icon';
-  import { getToken } from '/@/utils/auth';
   import { uploadUrl } from '/@/api/common/api';
   import { propTypes } from '/@/utils/propTypes';
   import { useMessage } from '/@/hooks/web/useMessage';
@@ -40,7 +55,7 @@
   import UploadItemActions from './components/UploadItemActions.vue';
   import { split } from '/@/utils/index';
 
-  const { createMessage, createConfirm } = useMessage();
+  const { createMessage } = useMessage();
   const { prefixCls } = useDesign('j-upload');
   const attrs = useAttrs();
   const emit = defineEmits(['change', 'update:value']);
@@ -76,7 +91,8 @@
   const fileList = ref<any[]>([]);
   const uploadGoOn = ref<boolean>(true);
   // refs
-  const containerRef = ref();
+  const containerRef = ref<HTMLElement>();
+  const confirmedRemoveUid = ref<string | number>();
   // 是否达到了最大上传数量
   const isMaxCount = computed(() => props.maxCount > 0 && fileList.value.length >= props.maxCount);
   // 当前是否是上传图片模式
@@ -97,19 +113,17 @@
   });
   // 合并 props 和 attrs
   const bindProps = computed(() => {
-    //update-begin-author:liusq date:20220411 for: [issue/455]上传组件传入accept限制上传文件类型无效
+    // 代码逻辑说明: [issue/455]上传组件传入accept限制上传文件类型无效
     const bind: any = Object.assign({}, props, unref(attrs));
-    //update-end-author:liusq date:20220411 for: [issue/455]上传组件传入accept限制上传文件类型无效
 
     bind.name = 'file';
     bind.listType = isImageMode.value ? 'picture-card' : 'text';
     bind.class = [bind.class, { 'upload-disabled': props.disabled }];
     bind.data = { biz: props.bizPath, ...bind.data };
-    //update-begin-author:taoyan date:20220407 for: 自定义beforeUpload return false，并不能中断上传过程
+    // 代码逻辑说明: 自定义beforeUpload return false，并不能中断上传过程
     if (!bind.beforeUpload) {
       bind.beforeUpload = onBeforeUpload;
     }
-    //update-end-author:taoyan date:20220407 for: 自定义beforeUpload return false，并不能中断上传过程
     // 如果当前是图片上传模式，就只能上传图片
     if (isImageMode.value && !bind.accept) {
       bind.accept = 'image/*';
@@ -127,13 +141,12 @@
           parseArrayValue(val);
         }
       } else {
-        //update-begin---author:liusq ---date:20230914  for：[issues/5327]Upload组件returnUrl为false时上传的字段值返回了一个'[object Object]' ------------
+        // 代码逻辑说明: [issues/5327]Upload组件returnUrl为false时上传的字段值返回了一个'[object Object]' ------------
         if (props.returnUrl) {
           parsePathsValue(val);
         } else {
           val && parseArrayValue(JSON.parse(val));
         }
-        //update-end---author:liusq ---date:20230914  for：[issues/5327]Upload组件returnUrl为false时上传的字段值返回了一个'[object Object]' ------------
       }
     },
     { immediate: true }
@@ -202,9 +215,8 @@
       return;
     }
     let list: any[] = [];
-    // update-begin--author:liaozhiyang---date:20250325---for：【issues/7990】图片参数中包含逗号会错误的识别成多张图
+    // 代码逻辑说明: 【issues/7990】图片参数中包含逗号会错误的识别成多张图
     const result = split(paths);
-    // update-end--author:liaozhiyang---date:20250325---for：【issues/7990】图片参数中包含逗号会错误的识别成多张图
     for (const item of result) {
       let url = getFileAccessHttpUrl(item);
       list.push({
@@ -256,19 +268,26 @@
   }
 
   // 删除处理事件
-  function onRemove() {
-    if (props.removeConfirm) {
-      return new Promise((resolve) => {
-        createConfirm({
-          title: '删除',
-          content: `确定要删除这${isImageMode.value ? '张图片' : '个文件'}吗？`,
-          iconType: 'warning',
-          onOk: () => resolve(true),
-          onCancel: () => resolve(false),
-        });
-      });
+  function onRemove(file) {
+    if (!props.removeConfirm) {
+      return true;
     }
-    return true;
+    if (confirmedRemoveUid.value === file.uid) {
+      confirmedRemoveUid.value = undefined;
+      return true;
+    }
+    nextTick(() => getRemoveTrigger(file)?.click());
+    return false;
+  }
+
+  function confirmRemove(file) {
+    confirmedRemoveUid.value = file.uid;
+    getRemoveTrigger(file)?.closest('button')?.click();
+  }
+
+  function getRemoveTrigger(file): HTMLElement | undefined {
+    const triggers = containerRef.value?.querySelectorAll<HTMLElement>('.j-upload-remove-trigger') || [];
+    return Array.from(triggers).find((trigger) => trigger.dataset.fileUid === String(file.uid));
   }
 
   // upload组件change事件
@@ -309,10 +328,8 @@
     } else if (info.file.status === 'error') {
       createMessage.error(`${info.file.name} 上传失败.`);
     }
-    // update-begin--author:liaozhiyang---date:20240628---for：【issues/1273】上传组件JUpload配置beforeUpload阻止了上传，前端页面中还是显示缩略图
     // beforeUpload 返回false，则没有status
     info.file.status && (fileList.value = fileListTemp);
-    // update-end--author:liaozhiyang---date:20240628---for：【issues/1273】上传组件JUpload配置beforeUpload阻止了上传，前端页面中还是显示缩略图
     if (info.file.status === 'done' || info.file.status === 'removed') {
       //returnUrl为true时仅返回文件路径
       if (props.returnUrl) {
@@ -332,9 +349,8 @@
             return;
           }
         }
-        //update-begin---author:liusq ---date:20230914  for：[issues/5327]Upload组件returnUrl为false时上传的字段值返回了一个'[object Object]' ------------
+        // 代码逻辑说明: [issues/5327]Upload组件returnUrl为false时上传的字段值返回了一个'[object Object]' ------------
         emitValue(JSON.stringify(newFileList));
-        //update-end---author:liusq ---date:20230914  for：[issues/5327]Upload组件returnUrl为false时上传的字段值返回了一个'[object Object]' ------------
       }
     }
   }
@@ -409,6 +425,29 @@
           }
         }
 
+        .ant-upload-list-item-actions {
+          display: block !important;
+
+          a,
+          a.anticon,
+          .anticon,
+          .anticon-eye,
+          .anticon-download,
+          .upload-action-icon,
+          .app-iconify {
+            pointer-events: auto !important;
+            cursor: pointer !important;
+            color: #fff !important;
+            opacity: 1 !important;
+          }
+
+          svg,
+          svg path {
+            color: #fff !important;
+            fill: #fff !important;
+          }
+        }
+
         /* update-begin-author:taoyan date:2022-5-24 for:VUEN-1093详情界面 图片下载按钮显示不全*/
         .upload-download-handler {
           right: 6px !important;
@@ -462,6 +501,30 @@
             right: -4px;
           }
         }
+      }
+    }
+  }
+
+  .j-upload-remove-popconfirm {
+    .ant-popover-inner {
+      min-width: 148px;
+      padding: 8px 10px;
+    }
+
+    .ant-popconfirm-message-icon {
+      display: none;
+    }
+
+    .ant-popconfirm-message-title {
+      margin-inline-start: 0;
+    }
+
+    .ant-popconfirm-buttons {
+      margin-top: 6px;
+
+      .ant-btn {
+        padding-inline: 6px;
+        box-shadow: none;
       }
     }
   }

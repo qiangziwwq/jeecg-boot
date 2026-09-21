@@ -47,7 +47,7 @@
                       <template v-for="item in searchResult.depart" :key="item.id">
                         <div class="search-depart-item" @click="handleSearchDepartClick(item)">
                           <a-checkbox v-model:checked="item.checked" @click.stop @change="($event) => handleSearchDepartCheck($event, item)" />
-                          <div class="search-depart-item-name">{{ item.departName }}</div>
+                          <div class="search-depart-item-name">{{ getDepartName(item.departName, item.departNameAbbr) }}</div>
                           <RightOutlined />
                         </div>
                       </template>
@@ -62,17 +62,19 @@
               </template>
             </template>
             <template v-else>
-              <a-breadcrumb v-if="breadcrumb.length">
-                <a-breadcrumb-item @click="handleBreadcrumbClick()">
-                  <HomeOutlined />
-                </a-breadcrumb-item>
-                <template v-for="item in breadcrumb" :key="item?.id">
-                  <a-breadcrumb-item @click="handleBreadcrumbClick(item)">
-                    <span>{{ item.departName }}</span>
+              <div ref="breadcrumbBoxRef">
+                <a-breadcrumb v-if="breadcrumb.length">
+                  <a-breadcrumb-item @click="handleBreadcrumbClick()">
+                    <HomeOutlined />
                   </a-breadcrumb-item>
-                </template>
-              </a-breadcrumb>
-              <div v-if="currentDepartUsers.length">
+                  <template v-for="item in breadcrumb" :key="item?.id">
+                    <a-breadcrumb-item @click="handleBreadcrumbClick(item)">
+                      <span>{{ getDepartName(item.departName, item.departNameAbbr) }}</span>
+                    </a-breadcrumb-item>
+                  </template>
+                </a-breadcrumb>
+              </div>
+              <div v-if="currentDepartUsers.length || currentDeptTotal > 0">
                 <!-- 当前部门用户树 -->
                 <div class="depart-users-tree">
                   <div v-if="!currentDepartTree.length" class="allChecked">
@@ -90,13 +92,25 @@
                     </div>
                   </template>
                 </div>
+                <!-- 分页 -->
+                <div v-if="!currentDepartTree.length && currentDeptTotal > currentDeptPageSize" class="dept-user-pagination">
+                  <a-pagination
+                    v-model:current="currentDeptPageNo"
+                    :total="currentDeptTotal"
+                    :pageSize="currentDeptPageSize"
+                    size="small"
+                    :showSizeChanger="false"
+                    :showQuickJumper="false"
+                    @change="handleDeptUserPageChange"
+                  />
+                </div>
               </div>
               <!-- 部门树 -->
               <div v-if="currentDepartTree.length" class="depart-tree">
                 <template v-for="item in currentDepartTree" :key="item.id">
                   <div class="depart-tree-item" @click="handleDepartTreeClick(item)">
                     <a-checkbox v-model:checked="item.checked" @click.stop @change="($event) => handleDepartTreeCheck($event, item)" />
-                    <div class="depart-tree-item-name">{{ item.departName }}</div>
+                    <div class="depart-tree-item-name">{{ getDepartName(item.departName, item.departNameAbbr) }}</div>
                     <RightOutlined />
                   </div>
                 </template>
@@ -130,7 +144,7 @@
 </template>
 
 <script setup lang="ts">
-  import { ref, reactive } from 'vue';
+  import { ref, reactive, watch } from 'vue';
   import { RightOutlined, HomeOutlined, CloseOutlined } from '@ant-design/icons-vue';
   import { BasicModal, useModalInner } from '/@/components/Modal';
   import { queryTreeList, getTableList as getTableListOrigin } from '/@/api/common/api';
@@ -164,6 +178,11 @@
       type: Object,
       default: () => {},
     },
+    // 是否启用公司简称
+    useCompanyShortName: {
+      type: Boolean,
+      default: true,
+    },
     //最大选择数量
     maxSelectCount: {
       type: Number,
@@ -189,6 +208,11 @@
   const checkedDepartIds = ref<string[]>([]);
   // 当前部门用户
   const currentDepartUsers = ref([]);
+  // 当前叶子部门分页状态
+  const currentDeptId = ref('');
+  const currentDeptPageNo = ref(1);
+  const currentDeptPageSize = ref(50);
+  const currentDeptTotal = ref(0);
   // 已选用户
   const selectedUsers = ref<any[]>([]);
   // 全选
@@ -198,6 +222,8 @@
     depart: [],
     user: [],
   });
+  // 面包屑框
+  const breadcrumbBoxRef = ref();
   // 映射部门和人员的关系
   const cacheDepartUser = {};
   //注册弹框
@@ -268,6 +294,9 @@
   const handleBreadcrumbClick = (item?) => {
     // 先清空
     currentDepartUsers.value = [];
+    currentDeptId.value = '';
+    currentDeptPageNo.value = 1;
+    currentDeptTotal.value = 0;
     if (item) {
       const findIndex = breadcrumb.value.findIndex((o) => o.id === item.id);
       if (findIndex != -1) {
@@ -284,9 +313,17 @@
       breadcrumb.value = [];
     }
   };
+  // 同步当前部门下所有子部门的勾选状态
+  const setDepartChildrenChecked = (depart, checked: boolean) => {
+    depart.children?.forEach((child) => {
+      child.checked = checked;
+      setDepartChildrenChecked(child, checked);
+    });
+  };
   // 点击部门树复选框触发
   const handleDepartTreeCheck = (e, item) => {
     const { target } = e;
+    setDepartChildrenChecked(item, target.checked);
     if (target.checked) {
       // 选中
       getUsersByDeptId(item['id']).then((users) => {
@@ -361,31 +398,45 @@
               }
             });
           }
-          currentDepartUsers.value = result;
+          currentDepartUsers.value = result.sort((a, b) => a.sort - b.sort );
         });
     } else {
       // 没有子节点，则显示用户
       currentDepartTree.value = [];
-      getTableList({
-        departId: item['id'],
-      }).then((res: any) => {
-        if (res?.records) {
-          let checked = true;
-          res.records.forEach((item) => {
-            const findItem = selectedUsers.value.find((user) => user.id == item.id);
-            if (findItem) {
-              // 能在右侧找到说明选中了，左侧同样需要选中。
-              item.checked = true;
-            } else {
-              item.checked = false;
-              checked = false;
-            }
-          });
-          currentDepartAllUsers.value = checked;
-          currentDepartUsers.value = res.records;
-        }
-      });
+      currentDeptId.value = item['id'];
+      currentDeptPageNo.value = 1;
+      currentDeptTotal.value = 0;
+      loadDeptUsers(item['id'], 1);
     }
+  };
+  // 加载叶子部门用户（带分页）
+  const loadDeptUsers = (departId: string, pageNo: number) => {
+    return getTableList({
+      departId,
+      pageNo,
+      pageSize: currentDeptPageSize.value,
+    }).then((res: any) => {
+      if (res?.records) {
+        currentDeptTotal.value = res.total ?? 0;
+        currentDeptPageNo.value = pageNo;
+        let checked = true;
+        res.records.forEach((item) => {
+          const findItem = selectedUsers.value.find((user) => user.id == item.id);
+          if (findItem) {
+            item.checked = true;
+          } else {
+            item.checked = false;
+            checked = false;
+          }
+        });
+        currentDepartAllUsers.value = checked && res.records.length > 0;
+        currentDepartUsers.value = res.records.sort((a, b) => a.sort - b.sort);
+      }
+    });
+  };
+  // 叶子部门用户翻页
+  const handleDeptUserPageChange = (page: number) => {
+    loadDeptUsers(currentDeptId.value, page);
   };
   // 点击部门用户树复选框触发
   const handleDepartUsersTreeCheck = (item) => {
@@ -467,6 +518,17 @@
     const result = currentDepartUsers.value.every((item: any) => !!item.checked);
     currentDepartAllUsers.value = result;
   };
+  watch(breadcrumb, () => {
+    setTimeout(() => {
+      breadcrumbScrollToRight();
+    }, 0);
+  });
+  const breadcrumbScrollToRight = () => {
+    const olEle = breadcrumbBoxRef.value?.querySelector('ol');
+    if (olEle) {
+      olEle.scrollLeft = 30000;
+    }
+  };
   // 解析参数
   const parseParams = (params) => {
     if (props?.params) {
@@ -498,11 +560,11 @@
       } else {
         getTableList({
           departId: id,
+          pageNo: 1,
+          pageSize: 1000,
         }).then((res: any) => {
           cacheDepartUser[id] = res.records ?? [];
-          if (res?.records?.length) {
-            resolve(res.records ?? []);
-          }
+          resolve(res.records ?? []);
         });
       }
     });
@@ -542,7 +604,7 @@
     const result: any[] = [];
     const search = (nodes: any[]) => {
       for (const node of nodes) {
-        if (node.departName?.toLowerCase().includes(name.toLowerCase())) {
+        if (getDepartName(node.departName, node.departNameAbbr)?.toLowerCase().includes(name.toLowerCase())) {
           result.push(node);
         }
         if (node.children?.length) {
@@ -568,11 +630,26 @@
     }
     return null;
   };
+  // 获取部门名称（如果启用公司简称且公司简称不为空，则返回公司简称）
+  function getDepartName(departName, departNameAbbr) {
+    if (props.useCompanyShortName && departNameAbbr) {
+      return departNameAbbr;
+    }
+    return departName;
+  }
 </script>
 <style lang="less">
   .JSelectUserByDepartmentModal {
     .scroll-container {
       padding: 0;
+    }
+  }
+  .ant-modal-root .fullscreen-modal.JSelectUserByDepartmentModal {
+    .j-select-user-by-dept {
+      height: 100%;
+    }
+    .modal-content {
+      height: 100%;
     }
   }
 </style>
@@ -595,14 +672,56 @@
     flex: 1;
     border-right: 1px solid #e8e8e8;
     .search-box {
+      :deep(.ant-input-affix-wrapper) {
+        border-color: #d9d9d9 !important;
+      }
       margin: 0 16px 16px 16px;
     }
     :deep(.ant-breadcrumb) {
       font-size: 12px;
       margin-left: 16px;
+      margin-right: 16px;
       color: inherit;
       cursor: pointer;
+      ol {
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        /* 预留滚动条空间，避免 hover 变粗时布局跳动 */
+        padding-bottom: 6px;
+        /* 美化滚动条：默认细，悬停变粗方便拖动 */
+        // update-begin--author:liaozhiyang---date:20260804---for：【LHZP-869】部门组件面包屑有滚动条时悬停加粗便于拖动
+        &::-webkit-scrollbar {
+          width: 4px;
+          height: 4px;
+          background: transparent;
+        }
+        &::-webkit-scrollbar-thumb {
+          background: #bfbfbf;
+          border-radius: 4px;
+          transition: background-color 0.2s ease;
+          &:hover {
+            background: #999;
+          }
+        }
+        &::-webkit-scrollbar-track {
+          background: transparent;
+          border-radius: 4px;
+        }
+        &:hover {
+          &::-webkit-scrollbar {
+            height: 10px;
+          }
+          &::-webkit-scrollbar-thumb {
+            background: #999;
+          }
+          &::-webkit-scrollbar-track {
+            background: #f0f0f0;
+          }
+        }
+        // update-end--author:liaozhiyang---date:20260804---for：【LHZP-869】部门组件面包屑有滚动条时悬停加粗便于拖动
+      }
       li {
+        flex: none;
         .ant-breadcrumb-link {
           cursor: pointer;
           &:hover {
@@ -648,6 +767,11 @@
         margin: 0 8px;
       }
     }
+  }
+  .dept-user-pagination {
+    padding: 8px 16px;
+    text-align: right;
+    border-top: 1px solid #f0f0f0;
   }
   .depart-users-tree {
     .allChecked {
@@ -774,7 +898,7 @@
     }
     .selected-users {
       flex: 1;
-      overflow-y: auto;
+      overflow: hidden auto;
     }
     .content {
       display: grid;

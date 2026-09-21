@@ -1,7 +1,8 @@
 package org.jeecg.common.exception;
 
 import cn.hutool.core.util.ObjectUtil;
-import io.undertow.server.RequestTooBigException;
+import jakarta.annotation.Resource;
+import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.exception.ExceptionUtils;
 import org.apache.shiro.SecurityUtils;
@@ -33,9 +34,8 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import org.springframework.web.multipart.MultipartException;
 import org.springframework.web.servlet.NoHandlerFoundException;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 
-import javax.annotation.Resource;
-import javax.servlet.http.HttpServletRequest;
 import java.util.Map;
 import java.util.stream.Collectors;
 
@@ -106,6 +106,26 @@ public class JeecgBootExceptionHandler {
 		return Result.error(404, "路径不存在，请检查路径是否正确");
 	}
 
+	/**
+	 * 处理静态资源不存在异常（Spring Boot 3.2+）
+	 * Source Map、WebSocket路径被当作静态资源请求时会触发此异常，降级为debug日志避免刷屏
+	 */
+	@ExceptionHandler(NoResourceFoundException.class)
+	public Result<?> handleNoResourceFoundException(NoResourceFoundException e, HttpServletRequest request) {
+		String uri = request.getRequestURI();
+		// Source Map仅用于浏览器调试，缺失不影响业务功能，降级为debug日志
+		if (uri.endsWith(".map")) {
+			log.debug("Source Map资源不存在: {}", uri);
+		} else if (uri.contains("Socket/") || uri.contains("websocket/") || uri.contains("Websocket/")) {
+			// WebSocket路径的非upgrade请求，降级为debug日志
+			log.debug("WebSocket路径被当作静态资源请求: {}", uri);
+		} else {
+			log.error(e.getMessage(), e);
+			addSysLog(e);
+		}
+		return Result.error(404, "路径不存在，请检查路径是否正确");
+	}
+
 	@ExceptionHandler(DuplicateKeyException.class)
 	public Result<?> handleDuplicateKeyException(DuplicateKeyException e){
 		log.error(e.getMessage(), e);
@@ -122,13 +142,12 @@ public class JeecgBootExceptionHandler {
 	@ExceptionHandler(Exception.class)
 	public Result<?> handleException(Exception e){
 		log.error(e.getMessage(), e);
-		//update-begin---author:zyf ---date:20220411  for：处理Sentinel限流自定义异常
+		// 代码逻辑说明: 处理Sentinel限流自定义异常
 		Throwable throwable = e.getCause();
 		SentinelErrorInfoEnum errorInfoEnum = SentinelErrorInfoEnum.getErrorByException(throwable);
 		if (ObjectUtil.isNotEmpty(errorInfoEnum)) {
 			return Result.error(errorInfoEnum.getError());
 		}
-		//update-end---author:zyf ---date:20220411  for：处理Sentinel限流自定义异常
 		addSysLog(e);
 		return Result.error("操作失败，"+e.getMessage());
 	}
@@ -180,7 +199,7 @@ public class JeecgBootExceptionHandler {
 	@ExceptionHandler(MultipartException.class)
 	public Result<?> handleMaxUploadSizeExceededException(MultipartException e) {
 		Throwable cause = e.getCause();
-		if (cause instanceof IllegalStateException && cause.getCause() instanceof RequestTooBigException) {
+		if (cause instanceof IllegalStateException) {
 			log.error("文件大小超出限制: {}", cause.getMessage(), e);
 			addSysLog(e);
 			return Result.error("文件大小超出限制, 请压缩或降低文件质量!");
@@ -225,7 +244,6 @@ public class JeecgBootExceptionHandler {
 		return Result.error("校验失败，存在SQL注入风险！" + msg);
 	}
 
-	//update-begin---author:chenrui ---date:20240423  for：[QQYUN-8732]把错误的日志都抓取了 方便后续处理，单独弄个日志类型------------
 	/**
 	 * 添加异常新系统日志
 	 * @param e 异常
@@ -244,16 +262,20 @@ public class JeecgBootExceptionHandler {
         } catch (NullPointerException | BeansException ignored) {
         }
         if (null != request) {
-			//update-begin---author:chenrui ---date:20250408  for：[QQYUN-11716]上传大图片失败没有精确提示------------
 			//请求的参数
 			if (!isTooBigException(e)) {
 				// 文件上传过大异常时不能获取参数,否则会报错
 				Map<String, String[]> parameterMap = request.getParameterMap();
 				if(!CollectionUtils.isEmpty(parameterMap)) {
-					log.setMethod(oConvertUtils.mapToString(request.getParameterMap()));
+					//update-begin---author:scott ---date:2026-05-09  for：sys_log.method字段长度1000，过长导致Data truncation异常吞掉原始错误-----------
+					String methodStr = oConvertUtils.mapToString(request.getParameterMap());
+					if (methodStr != null && methodStr.length() > 950) {
+						methodStr = methodStr.substring(0, 950) + "...(truncated)";
+					}
+					log.setMethod(methodStr);
+					//update-end---author:scott ---date:2026-05-09  for：sys_log.method字段长度1000，过长导致Data truncation异常吞掉原始错误-----------
 				}
 			}
-			//update-end---author:chenrui ---date:20250408  for：[QQYUN-11716]上传大图片失败没有精确提示------------
             // 请求地址
             log.setRequestUrl(request.getRequestURI());
             //设置IP地址
@@ -277,7 +299,6 @@ public class JeecgBootExceptionHandler {
 
         baseCommonService.addLog(log);
     }
-	//update-end---author:chenrui ---date:20240423  for：[QQYUN-8732]把错误的日志都抓取了 方便后续处理，单独弄个日志类型------------
 
 	/**
 	 * 是否文件过大异常
@@ -291,7 +312,7 @@ public class JeecgBootExceptionHandler {
 		boolean isTooBigException = false;
 		if(e instanceof MultipartException){
 			Throwable cause = e.getCause();
-			if (cause instanceof IllegalStateException && cause.getCause() instanceof RequestTooBigException){
+			if (cause instanceof IllegalStateException){
 				isTooBigException = true;
 			}
 		}

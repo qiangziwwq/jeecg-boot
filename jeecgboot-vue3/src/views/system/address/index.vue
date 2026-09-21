@@ -15,6 +15,9 @@
                 .join(',')
             }}
           </template>
+          <template #action="{ record }">
+            <TableAction :actions="getTableAction(record)" />
+          </template>
         </BasicTable>
       </div>
     </a-col>
@@ -25,10 +28,12 @@
   import { provide, ref, unref } from 'vue';
   import { useDesign } from '/@/hooks/web/useDesign';
   import DepartLeftTree from './components/DepartLeftTree.vue';
-  import { BasicTable } from '/@/components/Table';
+  import { BasicTable, TableAction } from '/@/components/Table';
   import { useListPage } from '/@/hooks/system/useListPage';
   import { columns, searchFormSchema } from './address.data';
   import { list, positionList } from './address.api';
+  import { getCacheByDynKey } from "@/utils/auth";
+  import { JEECG_CHAT_UID } from "@/enums/cacheEnum";
 
   const { prefixCls } = useDesign('address-list');
   provide('prefixCls', prefixCls);
@@ -45,16 +50,17 @@
     tableProps: {
       api: list,
       columns,
-      //update-begin---author:wangshuai ---date:20220629  for：[VUEN-1485]进入系统管理--通讯录页面后，网页命令行报错------------
-      rowKey: 'userId',
-      //update-end---author:wangshuai ---date:20220629  for：[VUEN-1485]进入系统管理--通讯录页面后，网页命令行报错--------------
+      // 代码逻辑说明: [VUEN-1485]进入系统管理--通讯录页面后，网页命令行报错------------
+      rowKey: 'id',
       showIndexColumn: true,
       formConfig: {
         schemas: searchFormSchema,
       },
       canResize: false,
-      actionColumn: null,
       showTableSetting: false,
+      actionColumn:{
+        width: 80
+      },
       // 请求之前对参数做处理
       beforeFetch(params) {
         params.orgCode = orgCode.value;
@@ -70,6 +76,20 @@
     reload();
   }
 
+  /**
+   * 操作栏
+   * 
+   * @param record
+   */
+  function getTableAction(record) {
+    return [
+      {
+        label: '发消息',
+        onClick: handleSendChat.bind(null, record),
+      },
+    ];
+  }
+  
   // 查询职务信息
   async function queryPositionInfo() {
     const result = await positionList({ pageSize: 99999 });
@@ -82,6 +102,41 @@
     }
   }
   queryPositionInfo();
+  
+  /**
+   * 聊天
+   *
+   * @param record
+   */
+  function handleSendChat(record) {
+    //获取messageId
+    let cacheByDynKey = getCacheByDynKey(JEECG_CHAT_UID);
+    let iframes:any = document.getElementById("jChatOnline");
+    let id = record.id;
+    //update-begin---wangshuai---date:20260616  for：[JHHB-1436]【PC端通讯录】直接点击通讯录列表的发消息没反应，需要点一下通讯录图标，才能点列表的发消息------------
+    const msgData = {
+      type: "open-chat",
+      messageId: cacheByDynKey,
+      data: { id: id, type: "friend", groupName: "", avatar: record.avatar, username: record.realname }
+    };
+    // .btn 存在说明聊天窗口尚未打开（v-if="showChatIcon"），先触发打开再等 iframe 初始化
+    const chatBtn = document.querySelector<HTMLElement>('.j-chat-online .btn');
+    if (chatBtn) {
+      chatBtn.click();
+      const onReady = (event: MessageEvent) => {
+        //打开之后 聊天那边会发送get-system-unread-num 或者 get-dialog-height，满足一个说明已打开，再去发送聊天打开窗口的请求
+        if (event.data?.type === 'get-system-unread-num' || event.data?.type === 'get-dialog-height') {
+          window.removeEventListener('message', onReady);
+          iframes.contentWindow.postMessage(msgData, '*');
+        }
+      };
+      //监听消息
+      window.addEventListener('message', onReady);
+    } else {
+      iframes.contentWindow.postMessage(msgData, '*');
+    }
+    //update-end---author:wangshuai ---date:20260616  for：[JHHB-1436]【PC端通讯录】直接点击通讯录列表的发消息没反应，需要点一下通讯录图标，才能点列表的发消息------------
+  }
 </script>
 
 <style lang="less">

@@ -27,11 +27,11 @@ const { prefixCls, tableContext } = useListPage({
     api: getTenantUserList,
     columns: userColumns,
     immediate:false,
+    canResize: false,
     formConfig: {
       schemas: userSearchFormSchema,
-      //update-begin---author:wangshuai ---date:20230704  for：【QQYUN-5698】样式问题------------
+      // 代码逻辑说明: 【QQYUN-5698】样式问题------------
       labelWidth: 40,
-      //update-end---author:wangshuai ---date:20230704  for：【QQYUN-5698】样式问题------------
       actionColOptions: {
         xs: 24,
         sm: 8,

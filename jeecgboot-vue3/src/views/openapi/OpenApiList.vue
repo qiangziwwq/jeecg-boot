@@ -17,8 +17,8 @@
      <!--插槽:table标题-->
       <template #tableTitle>
           <a-button type="primary" v-auth="'openapi:open_api:add'"  @click="handleAdd" preIcon="ant-design:plus-outlined"> 新增</a-button>
-          <a-button  type="primary" v-auth="'openapi:open_api:exportXls'"  preIcon="ant-design:export-outlined" @click="onExportXls"> 导出</a-button>
-          <j-upload-button  type="primary" v-auth="'openapi:open_api:importExcel'"  preIcon="ant-design:import-outlined" @click="onImportXls">导入</j-upload-button>
+<!--          <a-button  type="primary" v-auth="'openapi:open_api:exportXls'"  preIcon="ant-design:export-outlined" @click="onExportXls"> 导出</a-button>-->
+<!--          <j-upload-button  type="primary" v-auth="'openapi:open_api:importExcel'"  preIcon="ant-design:import-outlined" @click="onImportXls">导入</j-upload-button>-->
           <a-dropdown v-if="selectedRowKeys.length > 0">
               <template #overlay>
                 <a-menu>
@@ -41,31 +41,31 @@
       </template>
       <!--字段回显插槽-->
       <template v-slot:bodyCell="{ column, record, index, text }">
+        <template v-if="column.dataIndex === 'requestUrl'">
+          <a @click="handleCopyUrl(record)" title="点击复制完整接口地址">{{ text }}</a>
+        </template>
       </template>
     </BasicTable>
     <!-- 表单区域 -->
-    <OpenApiModal @register="registerModal" @success="handleSuccess"></OpenApiModal>
+    <OpenApiDrawer @register="registerDrawer" @success="handleSuccess" />
   </div>
 </template>
 
 <script lang="ts" name="openapi-openApi" setup>
-  import {ref, reactive, computed, unref} from 'vue';
-  import {BasicTable, useTable, TableAction} from '/@/components/Table';
-  import { useListPage } from '/@/hooks/system/useListPage'
-  import {useModal} from '/@/components/Modal';
-  import OpenApiModal from './components/OpenApiModal.vue'
-  import OpenApiHeaderSubTable from './subTables/OpenApiHeaderSubTable.vue'
-  import OpenApiParamSubTable from './subTables/OpenApiParamSubTable.vue'
-  import {columns, searchFormSchema, superQuerySchema} from './OpenApi.data';
-  import {list, deleteOne, batchDelete, getImportUrl,getExportUrl} from './OpenApi.api';
-  import {downloadFile} from '/@/utils/common/renderUtils';
-  import { useUserStore } from '/@/store/modules/user';
+  import { ref, reactive } from 'vue';
+  import { BasicTable, TableAction } from '/@/components/Table';
+  import { useListPage } from '/@/hooks/system/useListPage';
+  import { useDrawer } from '/@/components/Drawer';
+  import { useMessage } from '/@/hooks/web/useMessage';
+  import { copyTextToClipboard } from '/@/hooks/web/useCopyToClipboard';
+  import OpenApiDrawer from './components/OpenApiDrawer.vue';
+  import { columns, searchFormSchema, superQuerySchema } from './OpenApi.data';
+  import { list, deleteOne, batchDelete, getImportUrl, getExportUrl } from './OpenApi.api';
   const queryParam = reactive<any>({});
-   // 展开key
   const expandedRowKeys = ref<any[]>([]);
-  //注册model
-  const [registerModal, {openModal}] = useModal();
-  const userStore = useUserStore();
+  const { createMessage } = useMessage();
+  const API_DOMAIN = import.meta.env.VITE_GLOB_DOMAIN_URL;
+  const [registerDrawer, { openDrawer }] = useDrawer();
    //注册table数据
   const { prefixCls,tableContext,onExportXls,onImportXls } = useListPage({
       tableProps:{
@@ -84,7 +84,7 @@
                 ],
             },
            actionColumn: {
-               width: 120,
+               width: 200,
                fixed:'right'
            },
            beforeFetch: (params) => {
@@ -130,7 +130,7 @@
     * 新增事件
     */
   function handleAdd() {
-     openModal(true, {
+     openDrawer(true, {
        isUpdate: false,
        showFooter: true,
      });
@@ -139,7 +139,7 @@
     * 编辑事件
     */
   function handleEdit(record: Recordable) {
-     openModal(true, {
+     openDrawer(true, {
        record,
        isUpdate: true,
        showFooter: true,
@@ -149,7 +149,7 @@
     * 详情
    */
   function handleDetail(record: Recordable) {
-     openModal(true, {
+     openDrawer(true, {
        record,
        isUpdate: true,
        showFooter: false,
@@ -176,13 +176,31 @@
    /**
       * 操作栏
       */
+  /**
+   * 复制接口地址
+   */
+  async function handleCopyUrl(record: Recordable) {
+    const url = API_DOMAIN + '/openapi/call/' + record.requestUrl;
+    try {
+      //update-begin---wangshuai---date:20260804  for：[LHZP-1353] openapi 接口管理 复制不了------------
+      if (copyTextToClipboard(url)) {
+        createMessage.success('接口地址已复制');
+      } else {
+        createMessage.error('复制失败，请手动复制');
+      }
+      //update-end---author:wangshuai ---date:20260804  for：[LHZP-1353]openapi 接口管理 复制不了------------
+    } catch (_e) {
+      createMessage.error('复制失败，请手动复制');
+    }
+  }
+
   function getTableAction(record){
        return [
          {
            label: '编辑',
            onClick: handleEdit.bind(null, record),
            auth: 'openapi:open_api:edit'
-         }
+         },
        ]
    }
 

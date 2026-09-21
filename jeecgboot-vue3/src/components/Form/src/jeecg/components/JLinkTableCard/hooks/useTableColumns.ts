@@ -1,27 +1,52 @@
 import type { Ref } from 'vue';
+import type { ExtConfigType } from '../../types';
 import { HrefSlots, OnlineColumn } from '/@/components/jeecg/OnLine/types/onlineConfig';
-import { filterMultiDictText } from '/@/utils/dict/JDictSelectUtil';
+import { filterMultiDictObjs } from '/@/utils/dict/JDictSelectUtil';
 import { computed, defineAsyncComponent, h, reactive, ref, toRaw, unref, watch, markRaw } from 'vue';
 import { useRouter } from 'vue-router';
+import { Tag as ATag } from 'ant-design-vue';
 import { getFileAccessHttpUrl } from '/@/utils/common/compUtils';
-import { getAreaTextByCode } from '/@/components/Form/src/utils/Area';
-import { createImgPreview } from '/@/components/Preview/index';
+import { getAreaTextByCodeAnyLevel } from '/@/components/Form/src/utils/Area';
+import { createImgPreview } from '@/components/Preview';
 import { importViewsFile, _eval } from '/@/utils';
 import { useModal } from '/@/components/Modal';
-import { getToken } from '/@/utils/auth';
+import LinkTableListPiece from '../../extend/linkTable/LinkTableListPiece.vue'
+import { getToken } from "/@/utils/auth";
 import { downloadFile } from '/@/api/common/api';
 import { getWeekMonthQuarterYear, split } from '/@/utils';
+import { getItemColor } from "@/utils/dict/DictColors";
+
 /**
  * 获取实际列表需要的column配置
  * @param onlineTableContext 从数据库中查出来的数据
  * @param extConfigJson 扩展配置JSON
  */
-export function useTableColumns(onlineTableContext, extConfigJson: Ref<any | undefined>) {
+export function useTableColumns(onlineTableContext, extConfigJson: Ref<ExtConfigType | undefined>) {
   // 获取路由器对象 href跳转用到
   let router = useRouter();
 
   // 列信息
   const columns = ref<Array<OnlineColumn>>([]);
+  /**
+   * 20260309
+   * liaozhiyang
+   * 【issues/9336】列宽拖动不了
+   * */
+  function applyResizableColumns(cols: OnlineColumn[]) {
+    cols.forEach((column) => {
+      if (!column.width) {
+        if (column.fieldType === 'date' || column.fieldType === 'Date') {
+          column.width = 120;
+        } else if (column.fieldType === 'link_table') {
+          column.width = 180;
+        } else {
+          column.width = 150;
+        }
+      }
+      column.resizable = true;
+    });
+  }
+
   // 是否有bpm_status
   //const hasBpmStatus = ref<boolean>(false)
   // 字典信息
@@ -70,6 +95,12 @@ export function useTableColumns(onlineTableContext, extConfigJson: Ref<any | und
 
     let dataColumns = result.columns;
     dataColumns.forEach((column) => {
+      if (extConfigJson?.value?.canResizeColumn === 1) {
+        // update-begin--author:liaozhiyang---date:20260309---for:【issues/9336】列宽拖动不了
+        applyResizableColumns([column]);
+        // update-end--author:liaozhiyang---date:20260309---for:【issues/9336】列宽拖动不了
+      }
+      
       // update-begin--author:liaozhiyang---date:20230818---for：【QQYUN-4161】列支持固定功能
       if (column.fieldExtendJson) {
         const json = JSON.parse(column.fieldExtendJson);
@@ -182,6 +213,17 @@ export function useTableColumns(onlineTableContext, extConfigJson: Ref<any | und
             }
             //update-end-author:taoyan date:2023-2-15 for: QQYUN-4286【online表单】主子表开启联合查询 功能测试报错打不开
             let renderResult:any = []
+            for(let i=0;i<tempIdArray.length;i++){
+              let renderObj = h(
+                LinkTableListPiece,
+                {
+                  id: tempIdArray[i],
+                  text: tempLabelArray[i],
+                  onTab:(id)=>handleClickLinkTable(id, hrefSlotName, json.isListReadOnly)
+                }
+              );
+              renderResult.push(renderObj)
+            }
             if(renderResult.length==0){
               return ''
             }
@@ -216,13 +258,29 @@ export function useTableColumns(onlineTableContext, extConfigJson: Ref<any | und
           column.ellipsis = true;
           column.customRender = ({ text, record }) => {
             let value = text;
+            const valueSpan: any[] = [];
+            const getValue = () => valueSpan.length ? valueSpan : value;
             // 如果 dictCode 有值，就进行字典转换
             if (dictCode) {
               if (dictCode.startsWith(replaceFlag)) {
                 let textFieldName = dictCode.replace(replaceFlag, '');
                 value = record[textFieldName];
               } else {
-                value = filterMultiDictText(unref(dictOptionInfo)[dictCode], text + '');
+                const dictItems = filterMultiDictObjs(unref(dictOptionInfo)[dictCode], text);
+                value = dictItems.map((item) => {
+                  if (item.hasColor) {
+                    //获取字体颜色
+                    const fontColor = getItemColor(item.color);
+                    valueSpan.push(h(ATag, {
+                      color: item.color,
+                      style: {
+                        'color': fontColor,
+                        'margin-left': '5px',
+                      },
+                    }, () => item.text))
+                  }
+                  return item.text;
+                }).join(',');
               }
             }
             // 扩展参数设置列的内容长度
@@ -240,11 +298,11 @@ export function useTableColumns(onlineTableContext, extConfigJson: Ref<any | und
                   {
                     onClick: () => handleClickFieldHref(field, record),
                   },
-                  value
+                  getValue(),
                 );
               }
             }
-            return value;
+            return h('span', {}, getValue());
           };
         }
 
@@ -374,7 +432,7 @@ export function useTableColumns(onlineTableContext, extConfigJson: Ref<any | und
   }
 
   //如果是树列表 操作列只能右侧固定
-  let fixedAction:any = 'left';
+  let fixedAction:any = 'right';
   if(onlineTableContext.isTree()){
     fixedAction = 'right'
   }
@@ -388,15 +446,20 @@ export function useTableColumns(onlineTableContext, extConfigJson: Ref<any | und
   });
 
   // 监听扩展参数的固定列配置，动态改变操作列的固定方式
-  watch(() => extConfigJson?.value, () => {
-    if (extConfigJson?.value?.tableFixedAction === 1) {
-      actionColumn.fixed = extConfigJson?.value?.tableFixedActionType || 'right';
-      // 如果是树列表 操作列只能右侧固定
-      if(onlineTableContext.isTree()){
-        actionColumn.fixed = 'right'
-      }
+watch(() => extConfigJson?.value, () => {
+  if (extConfigJson?.value?.tableFixedAction === 1) {
+    actionColumn.fixed = extConfigJson?.value?.tableFixedActionType || 'right';
+    if (onlineTableContext.isTree()) {
+      actionColumn.fixed = 'right';
     }
-  });
+  }
+  // update-begin--author:liaozhiyang---date:20260309---for:【issues/9336】列宽拖动不了
+  if (extConfigJson?.value?.canResizeColumn === 1 && columns.value.length > 0) {
+    applyResizableColumns(columns.value);
+    onlineTableContext.reloadTable();
+  }
+  // update-end--author:liaozhiyang---date:20260309---for:【issues/9336】列宽拖动不了
+});
 
   // 流程按钮状态
   function bpmStatusFilter(tableColumns: OnlineColumn[]): boolean {
@@ -448,11 +511,29 @@ export function useTableColumns(onlineTableContext, extConfigJson: Ref<any | und
    * 根据编码获取省市区文本
    * @param code
    */
-  function getPcaText(code) {
+  function getPcaText(code, column) {
     if (!code) {
       return '';
     }
-    return getAreaTextByCode(code);
+    // update-begin--author:liaozhiyang---date:20260204---for:【QQYUN-14694】online支持配置独立的省、市、县
+    let includeParent = true;
+    let fieldExtendJson = column?.fieldExtendJson;
+    let level = 3;
+    if (fieldExtendJson) {
+      fieldExtendJson = JSON.parse(fieldExtendJson);
+      if (['province', 'city', 'region'].includes(fieldExtendJson.displayLevel)) {
+        if (fieldExtendJson.displayLevel === 'province') {
+          level = 1;
+        } else if (fieldExtendJson.displayLevel === 'city') {
+          level = 2;
+        } else if (fieldExtendJson.displayLevel === 'region') {
+          level = 3;
+        }
+        includeParent = false;
+      }
+    }
+    return getAreaTextByCodeAnyLevel(code, includeParent, level as 1 | 2 | 3);
+    // update-end--author:liaozhiyang---date:20260204---for:【QQYUN-14694】online支持配置独立的省、市、县
   }
 
   /**

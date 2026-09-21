@@ -8,6 +8,7 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import io.swagger.v3.oas.annotations.Operation;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.shiro.authz.annotation.RequiresRoles;
 import org.jeecg.common.api.vo.Result;
 import org.jeecg.common.aspect.annotation.AutoLog;
 import org.jeecg.common.system.base.controller.JeecgController;
@@ -15,13 +16,17 @@ import org.jeecg.common.system.query.QueryGenerator;
 import org.jeecg.common.util.FillRuleUtil;
 import org.jeecg.modules.system.entity.SysFillRule;
 import org.jeecg.modules.system.service.ISysFillRuleService;
+import org.jeecgframework.poi.excel.entity.ImportParams;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
+import org.springframework.web.multipart.MultipartHttpServletRequest;
 import org.springframework.web.servlet.ModelAndView;
 
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import java.util.Arrays;
+import java.util.Map;
 
 /**
  * @Description: 填值规则
@@ -48,6 +53,7 @@ public class SysFillRuleController extends JeecgController<SysFillRule, ISysFill
      */
     @AutoLog(value = "填值规则-分页列表查询")
     @Operation(summary = "填值规则-分页列表查询")
+    @RequiresRoles({"admin"})
     @GetMapping(value = "/list")
     public Result<?> queryPageList(SysFillRule sysFillRule,
                                    @RequestParam(name = "pageNo", defaultValue = "1") Integer pageNo,
@@ -65,6 +71,7 @@ public class SysFillRuleController extends JeecgController<SysFillRule, ISysFill
      * @param ruleCode
      * @return
      */
+    @RequiresRoles({"admin"})
     @GetMapping(value = "/testFillRule")
     public Result testFillRule(@RequestParam("ruleCode") String ruleCode) {
         Object result = FillRuleUtil.executeRule(ruleCode, new JSONObject());
@@ -79,6 +86,7 @@ public class SysFillRuleController extends JeecgController<SysFillRule, ISysFill
      */
     @AutoLog(value = "填值规则-添加")
     @Operation(summary = "填值规则-添加")
+    @RequiresRoles({"admin"})
     @PostMapping(value = "/add")
     public Result<?> add(@RequestBody SysFillRule sysFillRule) {
         sysFillRuleService.save(sysFillRule);
@@ -93,6 +101,7 @@ public class SysFillRuleController extends JeecgController<SysFillRule, ISysFill
      */
     @AutoLog(value = "填值规则-编辑")
     @Operation(summary = "填值规则-编辑")
+    @RequiresRoles({"admin"})
     @RequestMapping(value = "/edit", method = {RequestMethod.PUT,RequestMethod.POST})
     public Result<?> edit(@RequestBody SysFillRule sysFillRule) {
         sysFillRuleService.updateById(sysFillRule);
@@ -107,6 +116,7 @@ public class SysFillRuleController extends JeecgController<SysFillRule, ISysFill
      */
     @AutoLog(value = "填值规则-通过id删除")
     @Operation(summary = "填值规则-通过id删除")
+    @RequiresRoles({"admin"})
     @DeleteMapping(value = "/delete")
     public Result<?> delete(@RequestParam(name = "id", required = true) String id) {
         sysFillRuleService.removeById(id);
@@ -121,6 +131,7 @@ public class SysFillRuleController extends JeecgController<SysFillRule, ISysFill
      */
     @AutoLog(value = "填值规则-批量删除")
     @Operation(summary = "填值规则-批量删除")
+    @RequiresRoles({"admin"})
     @DeleteMapping(value = "/deleteBatch")
     public Result<?> deleteBatch(@RequestParam(name = "ids", required = true) String ids) {
         this.sysFillRuleService.removeByIds(Arrays.asList(ids.split(",")));
@@ -135,6 +146,7 @@ public class SysFillRuleController extends JeecgController<SysFillRule, ISysFill
      */
     @AutoLog(value = "填值规则-通过id查询")
     @Operation(summary = "填值规则-通过id查询")
+    @RequiresRoles({"admin"})
     @GetMapping(value = "/queryById")
     public Result<?> queryById(@RequestParam(name = "id", required = true) String id) {
         SysFillRule sysFillRule = sysFillRuleService.getById(id);
@@ -147,6 +159,7 @@ public class SysFillRuleController extends JeecgController<SysFillRule, ISysFill
      * @param request
      * @param sysFillRule
      */
+    @RequiresRoles({"admin"})
     @RequestMapping(value = "/exportXls")
     public ModelAndView exportXls(HttpServletRequest request, SysFillRule sysFillRule) {
         return super.exportXls(request, sysFillRule, SysFillRule.class, "填值规则");
@@ -159,9 +172,26 @@ public class SysFillRuleController extends JeecgController<SysFillRule, ISysFill
      * @param response
      * @return
      */
+    @RequiresRoles({"admin"})
     @RequestMapping(value = "/importExcel", method = RequestMethod.POST)
     public Result<?> importExcel(HttpServletRequest request, HttpServletResponse response) {
-        return super.importExcel(request, response, SysFillRule.class);
+        //update-begin---author:wangshuai ---date:20260803  for：【LHZP-1265】系统编码规则导入重复编码时提示具体Excel行号-----------
+        MultipartHttpServletRequest multipartRequest = (MultipartHttpServletRequest) request;
+        Map<String, MultipartFile> fileMap = multipartRequest.getFileMap();
+        for (Map.Entry<String, MultipartFile> entry : fileMap.entrySet()) {
+            ImportParams params = new ImportParams();
+            params.setTitleRows(2);
+            params.setHeadRows(1);
+            params.setNeedSave(true);
+            try {
+                return sysFillRuleService.importExcelCheckRuleCode(entry.getValue(), params);
+            } catch (Exception e) {
+                log.error(e.getMessage(), e);
+                return Result.error("文件导入失败：" + e.getMessage());
+            }
+        }
+        return Result.error("文件导入失败：未找到上传文件");
+        //update-end---author:wangshuai ---date:20260803  for：【LHZP-1265】系统编码规则导入重复编码时提示具体Excel行号-----------
     }
 
     /**

@@ -15,6 +15,7 @@
 <#assign need_multi = false>
 <#assign need_popup = false>
 <#assign need_popup_dict = false>
+<#assign need_link_table = false>
 <#assign need_select_tag = false>
 <#assign need_select_tree = false>
 <#assign need_time = false>
@@ -54,6 +55,7 @@
                   pidField="${tableVo.extendParams.pidField}"
                   pidValue="0"
                   hasChildField="${tableVo.extendParams.hasChildren}"
+                  :hiddenNodeKey="hiddenNodeKey"
                   <#if po.readonly=='Y'>disabled<#else>:disabled="disabled"</#if>>
                 </j-tree-select>
               </a-form-item>
@@ -106,6 +108,8 @@
   const labelCol = ref<any>({ xs: { span: 24 }, sm: { span: 5 } });
   const wrapperCol = ref<any>({ xs: { span: 24 }, sm: { span: 16 } });
   const confirmLoading = ref<boolean>(false);
+  //需要隐藏的key
+  const hiddenNodeKey = ref<string>('');
   //表单验证
   const validatorRules = reactive({
   <#include "/common/validatorRulesTemplate/native/vue3MainNative.ftl">
@@ -122,7 +126,8 @@
   const props = defineProps({
     formDisabled: { type: Boolean, default: false },
     formData: { type: Object, default: () => ({}) },
-    formBpm: { type: Boolean, default: true }
+    formBpm: { type: Boolean, default: true },
+    showSubmitButton: { type: Boolean, default: true }
   });
 
   // 表单禁用
@@ -154,7 +159,7 @@
   }
   // 是否显示提交按钮
   const showFlowSubmitButton = computed(()=>{
-    if(props.formBpm === true){
+    if(props.formBpm === true && props.showSubmitButton === true){
       if(props.formData.disabled === false){
         return true
       }
@@ -186,6 +191,11 @@
       })
       //赋值
       Object.assign(formData,tmpData);
+      if(tmpData.id) {
+        hiddenNodeKey.value = tmpData.id;
+      } else {
+        hiddenNodeKey.value = "";
+      }
       model = tmpData
     });
   }
@@ -303,6 +313,6 @@
 
 <style lang="less" scoped>
   .antd-modal-form {
-    padding: 14px;
+    padding: 14px 20px;
   }
 </style>

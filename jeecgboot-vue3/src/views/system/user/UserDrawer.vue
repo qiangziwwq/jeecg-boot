@@ -27,6 +27,8 @@
   const rowId = ref('');
   const departOptions = ref([]);
   let isFormDepartUser = false;
+  let isRoleDisabled = false;
+  let disabledDepartValue = '';
   //表单配置
   const [registerForm, { setProps, resetFields, setFieldsValue, validate, updateSchema }] = useForm({
     labelWidth: 90,
@@ -71,16 +73,15 @@
       }
       //负责部门/赋值
       data.record.departIds && !Array.isArray(data.record.departIds) && (data.record.departIds = data.record.departIds.split(','));
-      //update-begin---author:zyf   Date:20211210  for：避免空值显示异常------------
-      //update-begin---author:liusq   Date:20231008  for：[issues/772]避免空值显示异常------------
+      // 代码逻辑说明: [issues/772]避免空值显示异常------------
       data.record.departIds =  (!data.record.departIds || data.record.departIds == '') ? [] : data.record.departIds;
-      //update-end-----author:liusq   Date:20231008  for：[issues/772]避免空值显示异常------------
-      //update-begin---author:zyf   Date:20211210  for：避免空值显示异常------------
     }
     //处理角色用户列表情况(和角色列表有关系)
     data.selectedroles && (await setFieldsValue({ selectedroles: data.selectedroles }));
     // -update-begin--author:liaozhiyang---date:20240702---for：【TV360X-1737】部门用户编辑接口，增加参数updateFromPage:"deptUsers"
-    isFormDepartUser = data?.departDisabled === true ? true : false;
+    isFormDepartUser = data?.departDisabled === true || data?.roleDisabled === true;
+    isRoleDisabled = data?.roleDisabled === true;
+    disabledDepartValue = data?.departDisabled ? data.record?.selecteddeparts || '' : '';
     // -update-end--author:liaozhiyang---date:20240702---for：【TV360X-1737】部门用户编辑接口，增加参数updateFromPage:"deptUsers"
     //编辑时隐藏密码/角色列表隐藏角色信息/我的部门时隐藏所属部门
     updateSchema([
@@ -94,41 +95,40 @@
         ifShow: !unref(isUpdate),
       },
       {
-        field: 'selectedroles',
-        show: !data.isRole,
-      },
-      {
         field: 'departIds',
         componentProps: { options: departOptions },
       },
       {
         field: 'selecteddeparts',
-        show: !data?.departDisabled,
+        //update-begin---author:wangshuai ---date:20260811  for：[LHZP-1141]【系统管理】我的部门编辑用户所属部门和角色没显示出来------------
+        show: true,
+        componentProps: { disabled: !!data?.departDisabled },
+        //update-end---author:wangshuai ---date:20260811  for：[LHZP-1141]【系统管理】我的部门编辑用户所属部门和角色没显示出来------------
       },
       {
         field: 'selectedroles',
-        show: !data?.departDisabled,
-        //update-begin---author:wangshuai ---date:20230424  for：【issues/4844】多租户模式下，新增或编辑用户，选择角色一栏，角色选项没有做租户隔离------------
+        //update-begin---author:wangshuai ---date:20260811  for：[LHZP-1141]【系统管理】我的部门编辑用户所属部门和角色没显示出来------------
+        show: !data.isRole,
         //判断是否为多租户模式
         componentProps:{
-          api: data.tenantSaas?getAllRolesList:getAllRolesListNoByTenant
+          api: data.tenantSaas?getAllRolesList:getAllRolesListNoByTenant,
+          disabled: !!data?.roleDisabled,
+          immediate: !!data?.roleDisabled,
+        //update-end---author:wangshuai ---date:20260811  for：[LHZP-1141]【系统管理】我的部门编辑用户所属部门和角色没显示出来------------
         }
-        //update-end---author:wangshuai ---date:20230424  for：【issues/4844】多租户模式下，新增或编辑用户，选择角色一栏，角色选项没有做租户隔离------------
       },
-      //update-begin---author:wangshuai ---date:20230522  for：【issues/4935】租户用户编辑界面中租户下拉框未过滤，显示当前系统所有的租户------------
+      // 代码逻辑说明: 【issues/4935】租户用户编辑界面中租户下拉框未过滤，显示当前系统所有的租户------------
       {
         field: 'relTenantIds',
         componentProps:{
           disabled: !!data.tenantSaas,
         },
       },
-      //update-end---author:wangshuai ---date:20230522  for：【issues/4935】租户用户编辑界面中租户下拉框未过滤，显示当前系统所有的租户------------
     ]);
-    //update-begin---author:wangshuai ---date:20230522  for：【issues/4935】租户用户编辑界面中租户下拉框未过滤，显示当前系统所有的租户------------
+    // 代码逻辑说明: 【issues/4935】租户用户编辑界面中租户下拉框未过滤，显示当前系统所有的租户------------
     if(!unref(isUpdate) && data.tenantSaas){
       await setFieldsValue({ relTenantIds: getTenantId().toString() })
     }
-    //update-end---author:wangshuai ---date:20230522  for：【issues/4935】租户用户编辑界面中租户下拉框未过滤，显示当前系统所有的租户------------
     // 无论新增还是编辑，都可以设置表单值
     if (typeof data.record === 'object') {
       setFieldsValue({
@@ -136,19 +136,37 @@
       });
     }
     // 隐藏底部时禁用整个表单
-    //update-begin-author:taoyan date:2022-5-24 for: VUEN-1117【issue】0523周开源问题
+    // 代码逻辑说明: VUEN-1117【issue】0523周开源问题
     setProps({ disabled: !showFooter.value });
-    //update-end-author:taoyan date:2022-5-24 for: VUEN-1117【issue】0523周开源问题
+    if(unref(isUpdate)){
+      updateSchema([
+        //修改主岗位和兼职岗位的参数
+        {
+          field: 'mainDepPostId',
+          componentProps: { params: { departIds: data.record.selecteddeparts, parentId: data.record.selecteddeparts } },
+        },
+        {
+          field: 'otherDepPostId',
+          componentProps: { params: { departIds: data.record.selecteddeparts, parentId: data.record.selecteddeparts } },
+        }
+      ]);
+    }
+    //部门管理，新增用户，在岗位下添加人员的时候默认当前岗位为主岗位
+    updateSchema([
+      {
+        field: 'mainDepPostId',
+        defaultValue: data?.mainDepPostId || '',
+      }
+    ])
   });
   //获取标题
   const getTitle = computed(() => {
-    // update-begin--author:liaozhiyang---date:20240306---for：【QQYUN-8389】系统用户详情抽屉title更改
+    // 代码逻辑说明: 【QQYUN-8389】系统用户详情抽屉title更改
     if (!unref(isUpdate)) {
       return '新增用户';
     } else {
       return unref(showFooter) ? '编辑用户' : '用户详情';
     }
-    // update-end--author:liaozhiyang---date:20240306---for：【QQYUN-8389】系统用户详情抽屉title更改
   });
   const { adaptiveWidth } = useDrawerAdaptiveWidth();
 
@@ -156,12 +174,19 @@
   async function handleSubmit() {
     try {
       let values = await validate();
+      if (disabledDepartValue) {
+        values.selecteddeparts = disabledDepartValue;
+      }
+      if (!isFormDepartUser && (!values.selecteddeparts || values.selecteddeparts.length === 0)) {
+        values.mainDepPostId = '';
+        values.otherDepPostId = '';
+      }
       setDrawerProps({ confirmLoading: true });
       values.userIdentity === 1 && (values.departIds = '');
       let isUpdateVal = unref(isUpdate);
       // -update-begin--author:liaozhiyang---date:20240702---for：【TV360X-1737】部门用户编辑接口，增加参数updateFromPage:"deptUsers"
       let params = values;
-      if (isFormDepartUser) {
+      if (isRoleDisabled) {
         params = { ...params, updateFromPage: 'deptUsers' };
       }
       // -update-end--author:liaozhiyang---date:20240702---for：【TV360X-1737】部门用户编辑接口，增加参数updateFromPage:"deptUsers"
@@ -176,3 +201,8 @@
     }
   }
 </script>
+<style scoped lang="less">
+  :deep(.ant-input-number){
+    width: 100%;
+  }
+</style>

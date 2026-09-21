@@ -27,6 +27,10 @@ public class AiAppConsts {
      */
     public static final String DEFAULT_APP_ID = "default";
 
+	/**
+	 * 未保存应用的调试应用id
+	 */
+	public static final String DEBUG_APP_ID = "__DEBUG_APP";
 
     /**
      * 应用类型:简单聊天
@@ -38,4 +42,53 @@ public class AiAppConsts {
      */
     public static final String APP_TYPE_CHAT_FLOW = "chatFLow";
 
+    /**
+     * 应用元数据:流程输入参数
+     * for [issues/8545]新建AI应用的时候只能选择没有自定义参数的AI流程
+     */
+    public static final String APP_METADATA_FLOW_INPUTS = "flowInputs";
+
+    /**
+     * 是否开启记忆
+     */
+    public static final Integer IZ_OPEN_MEMORY = 1;
+
+    /**
+     * 会话标题最大长度
+     */
+    public static final int CONVERSATION_MAX_TITLE_LENGTH = 10;
+
+
+    /**
+     * AI写作的流程id
+     */
+    public static final String ARTICLE_WRITER_FLOW_ID = "2011769909807579138";
+
+    /**
+     * AI写作redis请求前缀
+     */
+    public static final String ARTICLE_WRITER_KEY = "airag:chat:article:write:{}";
+
+    /**
+     * ai绘画类型: 绘图
+     */
+    public static final String AI_DRAW_TYPE_DRAW = "draw";
+
+    /**
+     * ai绘画类型: 换脸
+     */
+    public static final String AI_DRAW_TYPE_FACE = "face";
+
+    /**
+     * ai绘画类型: 混图
+     */
+    public static final String AI_DRAW_TYPE_MIX = "mix";
+
+    /**
+     * ai绘画 会话redis请求前缀
+     */
+    public static final String POSTER_TASK_PREFIX = "airag:poster:task:";
+    /** 任务结果在 Redis 中保留 1 小时 */
+    public static final long POSTER_TASK_TTL = 3600L;
+    
 }

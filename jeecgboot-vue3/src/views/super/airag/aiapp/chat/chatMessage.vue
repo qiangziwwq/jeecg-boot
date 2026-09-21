@@ -1,17 +1,25 @@
 <template>
-  <div class="chat" :class="[inversion === 'user' ? 'self' : 'chatgpt']" v-if="getText || (props.presetQuestion && props.presetQuestion.length>0)">
-    <div class="avatar">
+  <div class="chat" :class="[inversion === 'user' ? 'self' : 'chatgpt']" v-if="getText || props.error || (props.presetQuestion && props.presetQuestion.length>0)">
+    <div class="avatar" v-if="showAvatar !== 'no'">
       <img v-if="inversion === 'user'" :src="avatar()" />
       <img v-else :src="getAiImg()" />
     </div>
     <div class="content">
-      <p class="date">
+      <p class="date" v-if="showAvatar !== 'no'">
         <span v-if="inversion === 'ai'" style="margin-right: 10px">{{appData.name || 'AI助手'}}</span>
         <span>{{ dateTime }}</span>
       </p>
       <div v-if="inversion === 'user' && images && images.length>0" class="images">
           <div v-for="(item,index) in images" :key="index" class="image" @click="handlePreview(item)">
             <img :src="getImageUrl(item)"/>
+          </div>
+      </div>     
+      <div v-if="inversion === 'user' && files && files.length>0" class="file-list">
+          <div v-for="(item,index) in files" :key="index" class="file-item" @click="handleFilePreview(item?.filePath || item)">
+            <div class="file-icon">
+              <Icon :icon="getFileIcon(item?.filePath || item)" :color="getFileIconColor(item?.filePath || item)" size="24" />
+            </div>
+            <div class="file-name" :title="item.name">{{ getFileName(item?.filePath || item)}}</div>
           </div>
       </div>
       <div v-if="inversion === 'ai' && retrievalText && loading" class="retrieval">
@@ -30,8 +38,22 @@
           </a-col>
         </a-row>
       </div>
-      <div class="msgArea" v-if="!isCard">
-        <chatText :text="text" :inversion="inversion" :error="error" :loading="loading" :referenceKnowledge="referenceKnowledge"></chatText>
+      <div v-if="inversion === 'ai' && isCardConfig" class="card">
+        <a-row>
+          <a-col :xl="6" :lg="8" :md="10" :sm="24" style="flex:1;margin-right: 10px;" v-for="item in getCardConfigList()">
+            <CardTemplate :template-id="cardConfig?.templateId" :card-data="item" :card-config="cardConfig" @click="handleJumpClick(item)"></CardTemplate>
+          </a-col>
+        </a-row>
+      </div>
+      <div class="thinkArea" style="margin-bottom: 10px" v-if="!isCard && !isCardConfig && isThinkingEvent">
+        <a-collapse v-model:activeKey="activeKey" ghost>
+          <a-collapse-panel :key="uuid" :header="loading?'正在思考中':'思考结束'">
+            <ThinkText :text="thinkingText" :inversion="inversion" :error="error" :loading="loading"></ThinkText>
+          </a-collapse-panel>
+        </a-collapse>
+      </div>
+      <div class="msgArea" v-else-if="!isCard && !isCardConfig" :class="showAvatar == 'no' ? 'hidden-avatar' : ''">
+        <chatText :text="text" :inversion="inversion" :error="error" :errorMsg="errorMsg" :currentToolTag="currentToolTag" :loading="loading" :referenceKnowledge="referenceKnowledge" :isLast="isLast"></chatText>
       </div>
       <div v-if="presetQuestion" v-for="item in presetQuestion" class="question" @click="presetQuestionClick(item.descr)">
         <span>{{item.descr}}</span>
@@ -42,17 +64,66 @@
 
 <script setup lang="ts">
   import chatText from './chatText.vue';
+  import ThinkText from './ThinkText.vue';
   import defaultAvatar from "@/assets/images/ai/avatar.jpg";
   import { useUserStore } from '/@/store/modules/user';
   import defaultImg from '../img/ailogo.png';
-
-  const props = defineProps(['dateTime', 'text', 'inversion', 'error', 'loading','appData','presetQuestion','images','retrievalText', 'referenceKnowledge']);
-  import { getFileAccessHttpUrl } from '/@/utils/common/compUtils';
+  import { ref } from 'vue';
+  import { buildUUID } from '/@/utils/uuid';
+  import { getFileAccessHttpUrl, getFileIcon, getFileIconColor } from '/@/utils/common/compUtils';
   import { createImgPreview } from "@/components/Preview";
   import { computed } from "vue";
+  import CardTemplate from '/@/views/super/airag/aiapp/chat/components/CardTemplate.vue';
+  import { useGlobSetting } from "@/hooks/setting";
+  import {encryptByBase64} from "@/utils/cipher";
+
+  const { domainUrl, viewUrl } = useGlobSetting();
+  const props = defineProps(['dateTime', 'text', 'inversion', 'error', 'loading','errorMsg', 'currentToolTag', 'appData','presetQuestion','images','retrievalText', 'referenceKnowledge', 'eventType', 'showAvatar',"files", 'isLast']);
+
+  const uuid = ref<any>(buildUUID());
+  const activeKey = ref<any>(uuid.value);
+  const isThinkingEvent = computed(() => props.eventType === 'thinking' || props.eventType === 'thinking_end');
+  const thinkingText = computed(() => {
+    const text = props.text ?? '';
+    // update-begin--author:wangshuai---date:20260813---for：【LHZP-1615】这种程序底层语言不应该不返回显示把？
+    if (typeof text !== 'string') {
+      return text;
+    }
+    return text
+      .replace(/<jeecg-tool-exec\b[^>]*>[\s\S]*?<\/jeecg-tool-exec>/gi, '')
+      .split('\n')
+      .filter((line) => !isToolExecPayload(line))
+      .join('\n')
+      .trim();
+    // update-end--author:wangshuai---date:20260813---for：【LHZP-1615】这种程序底层语言不应该不返回显示把？
+  });
+
+  /**
+   * 判断思考文本中的单行 JSON 是否为工具执行记录。
+   */
+  function isToolExecPayload(text: string): boolean {
+    const value = text.trim();
+    if (!value.startsWith('{') || !value.endsWith('}')) {
+      return false;
+    }
+    try {
+      const record = JSON.parse(value);
+      return (
+        !!record &&
+        typeof record === 'object' &&
+        !Array.isArray(record) &&
+        typeof record.name === 'string' &&
+        Object.prototype.hasOwnProperty.call(record, 'input') &&
+        Object.prototype.hasOwnProperty.call(record, 'output') &&
+        Object.prototype.hasOwnProperty.call(record, 'loading')
+      );
+    } catch (error) {
+      return false;
+    }
+  }
 
   const getText = computed(()=>{
-    let text = props.text || props.retrievalText;
+    let text = isThinkingEvent.value ? thinkingText.value : props.text || props.retrievalText;
     if(text){
       text = text.trim();
     }
@@ -65,7 +136,17 @@
       return true;
     }
     return false;
+  });  
+  
+  const isCardConfig = computed(() => {
+    let text = props.text;
+    if (text && text.indexOf('::cardConfig::') != -1) {
+      return true;
+    }
+    return false;
   });
+  //卡片配置
+  const cardConfig = ref<any>();
 
   const { userInfo } = useUserStore();
   const avatar = () => {
@@ -95,7 +176,8 @@
       url = item.url;
     }
     if(item.hasOwnProperty('base64Data') && item.base64Data){
-      return item.base64Data;
+      let mimeType = item.mimeType ? item.mimeType:'image/png';
+      return "data:"+ mimeType +";base64,"+ item.base64Data;
     }
     return getFileAccessHttpUrl(url);
   }
@@ -133,6 +215,60 @@
   function aiCardHandleClick(url){
     window.open(url,'_blank');
   }
+
+
+  /**
+   * 从config获取取卡片列表
+   */
+  function getCardConfigList() {
+    let text = props.text;
+    let card = text.replace('::cardConfig::', 'cardConfig').replace(/\s+/g, '');
+    try {
+      let parse = JSON.parse(card);
+      cardConfig.value = JSON.parse(parse?.cardConfig);
+      return JSON.parse(parse?.content);
+    } catch (e){
+      console.log(e)
+      return '';
+    }
+  }
+
+  /**
+   * 卡片点击跳转
+   */
+  function handleJumpClick(item) {
+    if(cardConfig.value?.enableJump){
+      let src = item[cardConfig.value?.jumpUrl];
+      let reg = /#\s*{\s*domainURL\s*}/g;
+      src = src.replace(reg,domainUrl);
+      window.open(src,"_blank")
+    }
+  }
+
+  /**
+   * 获取文件名字
+   * 
+   * @param fileUrl
+   */
+  function getFileName(fileUrl){
+    if(!fileUrl) {
+      return '未命名的文件';
+    }
+    let fileName = fileUrl.substring(fileUrl.lastIndexOf('/') + 1).toLowerCase();
+    fileName = fileName.substring(0,fileName.lastIndexOf("."));
+    return fileName;
+  }
+
+  /**
+   * 文件预览
+   * 
+   * @param fileUrl
+   */
+  function handleFilePreview(fileUrl) {
+    let filePath = encodeURIComponent(encryptByBase64(getFileAccessHttpUrl(fileUrl)));
+    let url = `${viewUrl}?url=` + filePath;
+    window.open(url, "_blank")
+  }
 </script>
 
 <style lang="less" scoped>
@@ -147,11 +283,25 @@
       }
       .msgArea {
         flex-direction: row-reverse;
+        margin-bottom: 6px;
+      }
+      .thinkArea{
+        margin: 0;
+        padding: 5px 0 5px 22px;
+        position: relative;
       }
       .date {
         text-align: right;
       }
     }
+  }
+  :deep(.ant-collapse-header){
+    padding: 0 !important;
+  }
+  .hidden-avatar{
+    left: 44px;
+    position: relative;
+    top: -18px;
   }
   .avatar {
     flex: none;
@@ -165,6 +315,9 @@
     svg {
       font-size: 28px;
     }
+  }
+  .chat.chatgpt .avatar img{
+    border-radius: 4px;
   }
   .content {
     width: 90%;
@@ -211,6 +364,43 @@
       }
     }
   }
+
+  /*begin文件列表的样式*/
+  .file-list {
+    margin-bottom: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    align-items: flex-end;
+  }
+
+  .file-item {
+    display: flex;
+    align-items: center;
+    background: #f4f6f8;
+    border-radius: 8px;
+    padding: 8px 12px;
+    cursor: pointer;
+    width: fit-content;
+    max-width: 100%;
+
+    .file-icon {
+      margin-right: 8px;
+      display: flex;
+      align-items: center;
+    }
+
+    .file-name {
+      font-size: 14px;
+      color: #333;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      max-width: 200px;
+    }
+  }
+  /*end文件列表的样式*/
+
   .retrieval,
   .card {
     background-color: #f4f6f8;
@@ -223,13 +413,24 @@
     padding-right: 0.75rem;
   }
   .retrieval:after{
-    animation: blink 1s steps(5, start) infinite;
+    animation: ai-chat-cursor-blink 1s step-end infinite;
     color: #000;
     content: '_';
     font-weight: 700;
     margin-left: 3px;
     vertical-align: baseline;
   }
+  // update-begin--author:liaozhiyang---date:20260805---for：【LHZP-1436】思考加载的动画独立命名避免和codeMirror冲突
+  @keyframes ai-chat-cursor-blink {
+    0%,
+    100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0;
+    }
+  }
+  // update-end--author:liaozhiyang---date:20260805---for：【LHZP-1436】思考加载的动画独立命名避免和codeMirror冲突
   .card{
     width: 100%;
     background-color: unset;

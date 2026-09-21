@@ -5,14 +5,17 @@ import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.IService;
 import org.jeecg.modules.system.entity.SysDepart;
-import org.jeecg.modules.system.entity.SysUserDepart;
+import org.jeecg.modules.system.entity.SysUser;
 import org.jeecg.modules.system.model.DepartIdModel;
 import org.jeecg.modules.system.model.SysDepartTreeModel;
+import org.jeecg.modules.system.vo.SysChangeDepartVo;
 import org.jeecg.modules.system.vo.SysDepartExportVo;
+import org.jeecg.modules.system.vo.SysPositionSelectTreeVo;
 import org.jeecg.modules.system.vo.lowapp.ExportDepartVo;
 
-import javax.servlet.http.HttpServletRequest;
+import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 
 /**
  * <p>
@@ -75,12 +78,24 @@ public interface ISysDepartService extends IService<SysDepart>{
     
     /**
      * 根据关键字搜索相关的部门数据
+     *
      * @param keyWord
      * @param myDeptSearch
-     * @param departIds 多个部门id
+     * @param departIds    多个部门id
+     * @param orgCategory
+     * @param depIds
      * @return
      */
-    List<SysDepartTreeModel> searchByKeyWord(String keyWord,String myDeptSearch,String departIds);
+    List<SysDepartTreeModel> searchByKeyWord(String keyWord, String myDeptSearch, String departIds, String orgCategory, String depIds);
+
+	/**
+	 * 部门管理页面根据关键字搜索组织机构，搜索结果支持继续展开下级。
+	 *
+	 * @param keyWord 关键字
+	 * @param orgCategory 组织机构类型
+	 * @return 部门树节点
+	 */
+	List<SysDepartTreeModel> searchByKeyWordForDepartManage(String keyWord, String orgCategory);
     
     /**
      * 根据部门id删除并删除其可能存在的子级部门
@@ -111,6 +126,14 @@ public interface ISysDepartService extends IService<SysDepart>{
      * @return
      */
     List<String> queryDepartsByUserId(String userId);
+
+    /**
+     * 根据 用户ID 查询部门ID列表
+     *
+     * @param userIds
+     * @return key = 用户ID, value = 部门ID列表
+     */
+    Map<String, List<String>> queryDepartIdsByUserIds(Collection<String> userIds);
 
 	 /**
      * 根据部门id批量删除并删除其可能存在的子级部门
@@ -143,9 +166,10 @@ public interface ISysDepartService extends IService<SysDepart>{
      * @param parentId 父id
      * @param ids 多个部门id
      * @param primaryKey 主键字段（id或者orgCode）
+     * @param orgCategory 逗号分隔的 orgCategory 值，如 "1,2"；为空时退化为默认行为（排除岗位）
      * @return
      */
-    List<SysDepartTreeModel> queryTreeListByPid(String parentId,String ids, String primaryKey);
+    List<SysDepartTreeModel> queryTreeListByPid(String parentId,String ids, String primaryKey, String orgCategory);
 
     /**
      * 获取某个部门的所有父级部门的ID
@@ -240,4 +264,72 @@ public interface ISysDepartService extends IService<SysDepart>{
      * @param errorMessageList
      */
     void importSysDepart(List<SysDepartExportVo> listSysDeparts, List<String> errorMessageList);
+
+    /**
+     * 根据部门id和职级id获取岗位信息
+     *
+     * @param parentId
+     * @param departId
+     * @param positionId
+     */
+    List<SysPositionSelectTreeVo> getPositionByDepartId(String parentId, String departId, String positionId);
+
+    /**
+     * 获取职级关系
+     * @param departId
+     * @return
+     */
+    List<SysPositionSelectTreeVo> getRankRelation(String departId);
+
+    /**
+     * 异步查询部门和岗位接口
+     *
+     * @param parentId
+     * @param ids
+     * @param primaryKey
+     * @param departIds
+     * @return
+     */
+    List<SysDepartTreeModel> queryDepartAndPostTreeSync(String parentId, String ids, String primaryKey, String departIds,String orgName);
+
+    /**
+     * 根据部门code获取当前和上级部门名称
+     *
+     * @param orgCode
+     * @param depId
+     * @return
+     */
+    String getDepartPathNameByOrgCode(String orgCode, String depId);
+
+    /**
+     * 根据部门id获取部门下的岗位id
+     *
+     * @param depIds 当前选择的公司、子公司、部门id
+     * @return
+     */
+    String getDepPostIdByDepId(String depIds);
+
+    /**
+     * 调整部门位置
+     * 
+     * @param changeDepartVo
+     * @return
+     */
+    void updateChangeDepart(SysChangeDepartVo changeDepartVo);
+
+    /**
+     * 获取部门负责人
+     * 
+     * @param departId
+     * @param page
+     * @return
+     */
+    IPage<SysUser> getDepartmentHead(String departId, Page<SysUser> page);
+
+    /**
+     * 获取所有职级关系
+     * @param departId
+     * @return
+     */
+    List<SysPositionSelectTreeVo> getALLRankRelation(String departId);
 }

@@ -27,11 +27,12 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
-import javax.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletRequest;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.nio.charset.Charset;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -131,7 +132,6 @@ public class AiragKnowledgeDocServiceImpl extends ServiceImpl<AiragKnowledgeDocM
         List<AiragKnowledgeDoc> docList = airagKnowledgeDocMapper.selectBatchIds(docIdList);
         AssertUtils.assertNotEmpty("文档不存在", docList);
 
-        HttpServletRequest request = SpringContextUtils.getHttpServletRequest();
         // 检查状态
         List<AiragKnowledgeDoc> knowledgeDocs = docList.stream()
                 .filter(doc -> {
@@ -309,6 +309,20 @@ public class AiragKnowledgeDocServiceImpl extends ServiceImpl<AiragKnowledgeDocM
                 throw new JeecgBootException("请上传zip压缩包");
             }
             String uploadedZipPath = CommonUtils.uploadLocal(zipFile, bizPath, uploadpath);
+
+            //update-begin---wangshuai---date:20260414  for：【QQYUN-14932】创建知识库时，可以创建一个分段策略，知识库里面的文档默认使用知识库的分段策略------------
+            // 判断知识库是否配置了默认分段策略
+            boolean knowledgeHasDefaultSegment = false;
+            AiragKnowledge knowledge = airagKnowledgeMapper.selectById(knowId);
+            if (knowledge != null && oConvertUtils.isNotEmpty(knowledge.getMetadata())) {
+                try {
+                    JSONObject kmeta = JSONObject.parseObject(knowledge.getMetadata());
+                    knowledgeHasDefaultSegment = Boolean.TRUE.equals(kmeta.getBoolean(LLMConsts.ENABLE_SEGMENT));
+                } catch (Exception ignore) {}
+            }
+            final boolean useKnowledgeDefault = knowledgeHasDefaultSegment;
+            //update-end---author:wangshuai ---date:20260414  for：【QQYUN-14932】创建知识库时，可以创建一个分段策略，知识库里面的文档默认使用知识库的分段策略------------
+            
             // 解压缩文件
             List<AiragKnowledgeDoc> docList = new ArrayList<>();
             AtomicInteger fileCount = new AtomicInteger(0);
@@ -330,6 +344,7 @@ public class AiragKnowledgeDocServiceImpl extends ServiceImpl<AiragKnowledgeDocM
                 if (File.separator.equals("\\")) {
                     // Windows path handling
                     String escapedPath = uploadpath.replace("//", "\\\\");
+                    escapedPath = escapedPath.replace("/", "\\\\");
                     relativePath = uploadedFile.getPath().replaceFirst("^" + escapedPath, "");
                 } else {
                     // Unix path handling
@@ -338,6 +353,12 @@ public class AiragKnowledgeDocServiceImpl extends ServiceImpl<AiragKnowledgeDocM
                 JSONObject metadata = new JSONObject();
                 metadata.put(LLMConsts.KNOWLEDGE_DOC_METADATA_FILEPATH, relativePath);
                 metadata.put(LLMConsts.KNOWLEDGE_DOC_METADATA_SOURCES_PATH, sourcesPath);
+                //update-begin---wangshuai---date:20260414  for：【QQYUN-14932】创建知识库时，可以创建一个分段策略，知识库里面的文档默认使用知识库的分段策略------------
+                // 知识库有默认分段策略，文档标记使用知识库默认
+                if (useKnowledgeDefault) {
+                    metadata.put(LLMConsts.USE_KNOWLEDGE_DEFAULT, true);
+                }
+                //update-end---wangshuai---date:20260414  for：【QQYUN-14932】创建知识库时，可以创建一个分段策略，知识库里面的文档默认使用知识库的分段策略------------
                 doc.setMetadata(metadata.toJSONString());
                 docList.add(doc);
             });
@@ -388,7 +409,12 @@ public class AiragKnowledgeDocServiceImpl extends ServiceImpl<AiragKnowledgeDocM
             Files.createDirectories(targetDir);
         }
 
-        try (ZipFile zipFile = new ZipFile(zipFilePath.toFile())) {
+        //update-begin---author:wangshuai ---date:2026-06-25  for：【QQYUN-16635】知识库上传压缩包报错，中文zip文件名乱码，指定GBK回退编码（条目带UTF-8标志仍用UTF-8，兼容两种压缩包）-----------
+        try (ZipFile zipFile = ZipFile.builder()
+                .setFile(zipFilePath.toFile())
+                .setCharset(Charset.forName("GBK"))
+                .get()) {
+        //update-end---author:wangshuai ---date:2026-06-25  for：【QQYUN-16635】知识库上传压缩包报错，中文zip文件名乱码，指定GBK回退编码（条目带UTF-8标志仍用UTF-8，兼容两种压缩包）-----------
             Enumeration<ZipArchiveEntry> entries = zipFile.getEntries();
 
             while (entries.hasMoreElements()) {
@@ -397,6 +423,13 @@ public class AiragKnowledgeDocServiceImpl extends ServiceImpl<AiragKnowledgeDocM
                 if (entryCount > MAX_ENTRY_COUNT) {
                     throw new IOException("解压文件数量超限，可能是zip bomb攻击");
                 }
+
+                //update-begin---author:scott ---date:2026-04-16  for：【issues/9551】macOS压缩包隐藏文件过滤-----------
+                if (shouldSkipZipEntry(entry.getName())) {
+                    log.info("跳过压缩包中的隐藏文件: {}", entry.getName());
+                    continue;
+                }
+                //update-end---author:scott ---date:2026-04-16  for：【issues/9551】macOS压缩包隐藏文件过滤-----------
 
                 Path newPath = safeResolve(targetDir, entry.getName());
 
@@ -423,6 +456,28 @@ public class AiragKnowledgeDocServiceImpl extends ServiceImpl<AiragKnowledgeDocM
             }
         }
     }
+
+    //update-begin---author:scott ---date:2026-04-16  for：【issues/9551】macOS压缩包隐藏文件过滤-----------
+    /**
+     * 过滤压缩包中的系统隐藏文件，例如 macOS 自动生成的 __MACOSX 和 ._ 文件。
+     */
+    static boolean shouldSkipZipEntry(String entryName) {
+        if (oConvertUtils.isEmpty(entryName)) {
+            return true;
+        }
+        String normalizedName = entryName.replace("\\", "/");
+        if (normalizedName.startsWith("__MACOSX/")) {
+            return true;
+        }
+        //update-begin---author:wangshuai ---date:2026-06-25  for：【QQYUN-16635】用字符串截取取文件名，避免文件名含非法字符时 Paths.get 抛 InvalidPathException-----------
+        // 去掉末尾的目录分隔符再取最后一段，避免对目录项(如 "知识库/")解析为空
+        String trimmed = normalizedName.endsWith("/") ? normalizedName.substring(0, normalizedName.length() - 1) : normalizedName;
+        int slashIdx = trimmed.lastIndexOf('/');
+        String fileName = slashIdx >= 0 ? trimmed.substring(slashIdx + 1) : trimmed;
+        //update-end---author:wangshuai ---date:2026-06-25  for：【QQYUN-16635】用字符串截取取文件名，避免文件名含非法字符时 Paths.get 抛 InvalidPathException-----------
+        return fileName.startsWith("._") || fileName.equals(".DS_Store");
+    }
+    //update-end---author:scott ---date:2026-04-16  for：【issues/9551】macOS压缩包隐藏文件过滤-----------
 
     /**
      * 安全解析路径，防止Zip Slip攻击

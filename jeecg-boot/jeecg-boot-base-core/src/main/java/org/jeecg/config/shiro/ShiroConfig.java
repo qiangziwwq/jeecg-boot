@@ -1,5 +1,8 @@
 package org.jeecg.config.shiro;
 
+import jakarta.annotation.Resource;
+import jakarta.servlet.DispatcherType;
+import jakarta.servlet.Filter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.pool2.impl.GenericObjectPoolConfig;
 import org.apache.shiro.mgt.DefaultSessionStorageEvaluator;
@@ -20,21 +23,16 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.config.BeanDefinition;
 import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.annotation.*;
-import org.springframework.core.annotation.AnnotationUtils;
 import org.springframework.core.env.Environment;
-import org.springframework.core.type.filter.AnnotationTypeFilter;
+import org.springframework.boot.data.redis.autoconfigure.DataRedisProperties;
 import org.springframework.data.redis.connection.lettuce.LettuceConnectionFactory;
-import org.springframework.boot.autoconfigure.data.redis.RedisProperties;
 import org.springframework.util.CollectionUtils;
 import org.springframework.util.StringUtils;
-import org.springframework.web.bind.annotation.*;
 import org.springframework.web.filter.DelegatingFilterProxy;
+import org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandlerMapping;
 import redis.clients.jedis.HostAndPort;
 import redis.clients.jedis.JedisCluster;
 
-import javax.annotation.Resource;
-import javax.servlet.DispatcherType;
-import javax.servlet.Filter;
 import java.lang.reflect.Method;
 import java.util.*;
 
@@ -47,6 +45,25 @@ import java.util.*;
 @Slf4j
 @Configuration
 public class ShiroConfig {
+	//update-begin---author:scott ---date:2026-08-24  for：【issues/9840】静态资源按目录放行，避免业务接口通过伪造文件后缀绕过JWT-----------
+	private static final String[] ANONYMOUS_STATIC_RESOURCE_PATHS = {
+		// 基础入口
+		"/", "/index.html", "/doc.html", "/favicon.ico", "/logo.png", "/pca.json", "/demo1.html",
+		// Vue3前端构建资源
+		"/manifest.webmanifest", "/sw.js", "/workbox-*.js", "/assets/**", "/resource/**",
+		"/static/**", "/css/**", "/js/**", "/img/**", "/fonts/**",
+		// 系统内置静态页面
+		"/generic/**", "/view/userlist.html",
+		// 开源Demo大屏模板
+		"/bigscreen/template1/**", "/bigscreen/template2/**",
+		// 积木报表
+		"/jmreport/desreport_/**",
+		// 积木BI仪表盘、大屏
+		"/drag/favicon.ico", "/drag/lib/**", "/drag/list/**",
+		// Chat2BI
+        "/chat2bi/**", "/jimu/chat2bi/css/**", "/jimu/chat2bi/js/**","/jimu/chat2bi/libs/**", "/jimu/chat2bi/logo.png"
+	};
+	//update-end---author:scott ---date:2026-08-24  for：【issues/9840】静态资源按目录放行，避免业务接口通过伪造文件后缀绕过JWT-----------
 
     @Resource
     private LettuceConnectionFactory lettuceConnectionFactory;
@@ -54,8 +71,10 @@ public class ShiroConfig {
     private Environment env;
     @Resource
     private JeecgBaseConfig jeecgBaseConfig;
+    //update-begin---author:scott ---date:2026-07-07  for：【Spring Boot 4.0 升级】RedisProperties 改名为 DataRedisProperties，包路径变更-----------
     @Autowired(required = false)
-    private RedisProperties redisProperties;
+    private DataRedisProperties redisProperties;
+    //update-end---author:scott ---date:2026-07-07  for：【Spring Boot 4.0 升级】RedisProperties 改名为 DataRedisProperties，包路径变更-----------
     
     /**
      * Filter Chain定义说明
@@ -104,31 +123,14 @@ public class ShiroConfig {
 
         //filterChainDefinitionMap.put("/sys/common/view/**", "anon");//图片预览不限制token
         //filterChainDefinitionMap.put("/sys/common/download/**", "anon");//文件下载不限制token
-        filterChainDefinitionMap.put("/generic/**", "anon");//pdf预览需要文件
-
         filterChainDefinitionMap.put("/sys/getLoginQrcode/**", "anon"); //登录二维码
         filterChainDefinitionMap.put("/sys/getQrcodeToken/**", "anon"); //监听扫码
         filterChainDefinitionMap.put("/sys/checkAuth", "anon"); //授权接口排除
+        filterChainDefinitionMap.put("/openapi/call/**", "anon"); // 开放平台接口排除
 
-
-        //update-begin--Author:scott Date:20221116 for：排除静态资源后缀
-        filterChainDefinitionMap.put("/", "anon");
-        filterChainDefinitionMap.put("/doc.html", "anon");
-        filterChainDefinitionMap.put("/**/*.js", "anon");
-        filterChainDefinitionMap.put("/**/*.css", "anon");
-        filterChainDefinitionMap.put("/**/*.html", "anon");
-        filterChainDefinitionMap.put("/**/*.svg", "anon");
-        filterChainDefinitionMap.put("/**/*.pdf", "anon");
-        filterChainDefinitionMap.put("/**/*.jpg", "anon");
-        filterChainDefinitionMap.put("/**/*.png", "anon");
-        filterChainDefinitionMap.put("/**/*.gif", "anon");
-        filterChainDefinitionMap.put("/**/*.ico", "anon");
-        filterChainDefinitionMap.put("/**/*.ttf", "anon");
-        filterChainDefinitionMap.put("/**/*.woff", "anon");
-        filterChainDefinitionMap.put("/**/*.woff2", "anon");
-        filterChainDefinitionMap.put("/**/*.glb", "anon");
-        filterChainDefinitionMap.put("/**/*.wasm", "anon");
-        //update-end--Author:scott Date:20221116 for：排除静态资源后缀
+        //update-begin---author:scott ---date:2026-08-24  for：【issues/9840】禁止按URL后缀全局放行静态资源-----------
+		addAnonymousStaticResourcePaths(filterChainDefinitionMap);
+        //update-end---author:scott ---date:2026-08-24  for：【issues/9840】禁止按URL后缀全局放行静态资源-----------
 
         filterChainDefinitionMap.put("/druid/**", "anon");
         filterChainDefinitionMap.put("/swagger-ui.html", "anon");
@@ -136,14 +138,13 @@ public class ShiroConfig {
         filterChainDefinitionMap.put("/webjars/**", "anon");
         filterChainDefinitionMap.put("/v3/**", "anon");
 
-        // update-begin--Author:sunjianlei Date:20210510 for：排除消息通告查看详情页面（用于第三方APP）
         filterChainDefinitionMap.put("/sys/annountCement/show/**", "anon");
-        // update-end--Author:sunjianlei Date:20210510 for：排除消息通告查看详情页面（用于第三方APP）
+
+        //Chat2BI分享页（页面自带独立登录）
+        filterChainDefinitionMap.put("/jimu/chat2bi/chat", "anon");
 
         //积木报表排除
         filterChainDefinitionMap.put("/jmreport/**", "anon");
-        filterChainDefinitionMap.put("/**/*.js.map", "anon");
-        filterChainDefinitionMap.put("/**/*.css.map", "anon");
         
         //积木BI大屏和仪表盘排除
         filterChainDefinitionMap.put("/drag/view", "anon");
@@ -153,14 +154,16 @@ public class ShiroConfig {
         filterChainDefinitionMap.put("/drag/share/view/**", "anon");
         filterChainDefinitionMap.put("/drag/onlDragDatasetHead/getAllChartData", "anon");
         filterChainDefinitionMap.put("/drag/onlDragDatasetHead/getTotalData", "anon");
+        filterChainDefinitionMap.put("/drag/onlDragDatasetHead/getMapDataByCode", "anon");
+        filterChainDefinitionMap.put("/drag/onlDragDatasetHead/getTotalDataByCompId", "anon");
         filterChainDefinitionMap.put("/drag/mock/json/**", "anon");
+        filterChainDefinitionMap.put("/drag/onlDragDatasetHead/getDictByCodes", "anon");
+        filterChainDefinitionMap.put("/drag/onlDragDatasetHead/queryAllById", "anon");
         filterChainDefinitionMap.put("/jimubi/view", "anon");
         filterChainDefinitionMap.put("/jimubi/share/view/**", "anon");
 
         //大屏模板例子
         filterChainDefinitionMap.put("/test/bigScreen/**", "anon");
-        filterChainDefinitionMap.put("/bigscreen/template1/**", "anon");
-        filterChainDefinitionMap.put("/bigscreen/template2/**", "anon");
         //filterChainDefinitionMap.put("/test/jeecgDemo/rabbitMqClientTest/**", "anon"); //MQ测试
         //filterChainDefinitionMap.put("/test/jeecgDemo/html", "anon"); //模板页面
         //filterChainDefinitionMap.put("/test/jeecgDemo/redis/**", "anon"); //redis测试
@@ -169,6 +172,12 @@ public class ShiroConfig {
         filterChainDefinitionMap.put("/websocket/**", "anon");//系统通知和公告
         filterChainDefinitionMap.put("/newsWebsocket/**", "anon");//CMS模块
         filterChainDefinitionMap.put("/vxeSocket/**", "anon");//JVxeTable无痕刷新示例
+        //App vue3版本查询版本接口
+        filterChainDefinitionMap.put("/sys/version/app3version", "anon");
+        //仪表盘（按钮通信）
+        filterChainDefinitionMap.put("/dragChannelSocket/**","anon");
+        //App vue3版本查询版本接口
+        filterChainDefinitionMap.put("/sys/version/app3version", "anon");
 
         //性能监控——安全隐患泄露TOEKN（durid连接池也有）
         //filterChainDefinitionMap.put("/actuator/**", "anon");
@@ -198,7 +207,13 @@ public class ShiroConfig {
         return shiroFilterFactoryBean;
     }
 
-    //update-begin---author:chenrui ---date:20240126  for：【QQYUN-7932】AI助手------------
+	//update-begin---author:scott ---date:2026-08-24  for：【issues/9840】集中维护允许匿名访问的静态资源路径-----------
+	static void addAnonymousStaticResourcePaths(Map<String, String> filterChainDefinitionMap) {
+		for (String path : ANONYMOUS_STATIC_RESOURCE_PATHS) {
+			filterChainDefinitionMap.put(path, "anon");
+		}
+	}
+	//update-end---author:scott ---date:2026-08-24  for：【issues/9840】集中维护允许匿名访问的静态资源路径-----------
 
     /**
      * spring过滤装饰器 <br/>
@@ -214,20 +229,31 @@ public class ShiroConfig {
         FilterRegistrationBean registration = new FilterRegistrationBean();
         registration.setFilter(new DelegatingFilterProxy("shiroFilterFactoryBean"));
         registration.setEnabled(true);
-        //update-begin---author:chenrui ---date:20241202  for：[issues/7491]运行时间好长，效率慢 ------------
+        // 代码逻辑说明: [issues/7491]运行耗时长，效率慢 
         registration.addUrlPatterns("/test/ai/chat/send");
-        //update-end---author:chenrui ---date:20241202  for：[issues/7491]运行时间好长，效率慢 ------------
         registration.addUrlPatterns("/airag/flow/run");
         registration.addUrlPatterns("/airag/flow/debug");
+        registration.addUrlPatterns("/airag/flow/code/generate");
         registration.addUrlPatterns("/airag/chat/send");
         registration.addUrlPatterns("/airag/app/debug");
         registration.addUrlPatterns("/airag/app/prompt/generate");
+        registration.addUrlPatterns("/airag/chat/receive/**");
+        // 添加SSE接口的异步支持
+        registration.addUrlPatterns("/airag/extData/evaluator/debug");
+        registration.addUrlPatterns("/drag/onlDragDatasetHead/generateChartSse");
+        registration.addUrlPatterns("/drag/onlDragDatasetHead/updateChartOptSse");
+        registration.addUrlPatterns("/drag/onlDragDatasetHead/generateSqlSse");
+        //大屏AI生成/修改/讨论 SSE 接口的异步支持
+        registration.addUrlPatterns("/drag/page/aiGenerateScreenSse");
+        registration.addUrlPatterns("/drag/page/aiModifyScreenSse");
+        registration.addUrlPatterns("/drag/page/aiDiscussScreenSse");
+        registration.addUrlPatterns("/jmreport/ai/assistant/*");
+        registration.addUrlPatterns("/jimu/chat2bi/table-meta/syncTables");
         //支持异步
         registration.setAsyncSupported(true);
         registration.setDispatcherTypes(DispatcherType.REQUEST, DispatcherType.ASYNC);
         return registration;
     }
-    //update-end---author:chenrui ---date:20240126  for：【QQYUN-7932】AI助手------------
 
     @Bean("securityManager")
     public DefaultWebSecurityManager securityManager(ShiroRealm myRealm) {
@@ -348,12 +374,23 @@ public class ShiroConfig {
                 JedisCluster jedisCluster = new JedisCluster(portSet);
                 redisManager.setJedisCluster(jedisCluster);
             }
-            //update-end--Author:scott Date:20210531 for：修改集群模式下未设置redis密码的bug issues/I3QNIC
             manager = redisManager;
         }
         return manager;
     }
 
+    /**
+     * 解决 ShiroRequestMappingConfig 获取 requestMappingHandlerMapping Bean 冲突
+     * spring-boot-autoconfigure:3.4.5 和 spring-boot-actuator-autoconfigure:3.4.5
+     */
+    @Primary
+    @Bean
+    public RequestMappingHandlerMapping overridedRequestMappingHandlerMapping() {
+        RequestMappingHandlerMapping mapping = new RequestMappingHandlerMapping();
+        mapping.setUrlPathHelper(new org.springframework.web.util.UrlPathHelper());
+        return mapping;
+    }
+    
     private List<String> rebuildUrl(String[] bases, String[] uris) {
         List<String> urls = new ArrayList<>();
         for (String base : bases) {

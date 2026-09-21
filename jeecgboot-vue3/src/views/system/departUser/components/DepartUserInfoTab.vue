@@ -96,9 +96,8 @@
       beforeFetch(params) {
         params.depId = departId.value;
       },
-      // update-begin--author:liaozhiyang---date:20240717---for：【TV360X-1861】没部门时不加载用户信息
+      // 代码逻辑说明: 【TV360X-1861】没部门时不加载用户信息
       immediate: !!departId.value,
-      // update-end--author:liaozhiyang---date:20240717---for：【TV360X-1861】没部门时不加载用户信息
     },
   });
 
@@ -156,14 +155,15 @@
 
   // 编辑用户信息
   function editUserInfo(record) {
-    openDrawer(true, { isUpdate: true, record, departDisabled: true });
+    //update-begin---author:wangshuai ---date:20260811  for：[LHZP-1141]【系统管理】我的部门编辑用户所属部门和角色没显示出来------------
+    openDrawer(true, { isUpdate: true, record, departDisabled: true, roleDisabled: true, departPostDisabled: true });
+    //update-end---author:wangshuai ---date:20260811  for：[LHZP-1141]【系统管理】我的部门编辑用户所属部门和角色没显示出来------------
   }
 
   // 选择添加已有用户
   function selectAddUser() {
-    // update-begin--author:liaozhiyang---date:20240308---for：【TV360X-1613】再次打开还是上次的选中用户，没置空
+    // 代码逻辑说明: 【TV360X-1613】再次打开还是上次的选中用户，没置空
     userSelectModalRef.value.rowSelection.selectedRowKeys = [];
-    // update-end--author:liaozhiyang---date:20240308---for：【TV360X-1613】再次打开还是上次的选中用户，没置空
     selUserModal.openModal();
   }
 

@@ -5,12 +5,16 @@ export enum Api {
   //知识库管理
   list = '/airag/app/list',
   save = '/airag/app/edit',
+  copy = '/airag/app/copy',
   release = '/airag/app/release',
   delete = '/airag/app/delete',
   queryById = '/airag/app/queryById',
   queryBathById = '/airag/knowledge/query/batch/byId',
+  queryKnowledgeById = '/airag/knowledge/queryById',
   queryFlowById = '/airag/flow/queryById',
+  queryFlowByIds = '/airag/flow/list',
   promptGenerate = '/airag/app/prompt/generate',
+  generateMemoryByAppId = '/airag/app/prompt/generateMemoryByAppId',
 }
 
 /**
@@ -30,6 +34,14 @@ export const queryKnowledgeBathById = (params) => {
 };
 
 /**
+ * 查询知识库(单条)
+ * @param params
+ */
+export const queryKnowledgeById = (params) => {
+  return defHttp.get({ url: Api.queryKnowledgeById, params }, { isTransformResponse: false });
+};
+
+/**
  * 根据应用id查询应用
  * @param params
  */
@@ -45,6 +57,16 @@ export const saveApp = (params) => {
   return defHttp.put({ url: Api.save, params });
 };
 
+/**
+ * 复制应用
+ * @param params
+ * @author scott
+ * @since 2026-08-06 【LHZP-1512】AI应用增加后台复制接口
+ */
+export const copyApp = (params) => {
+  return defHttp.post({ url: Api.copy, params }, { joinParamsToUrl: true });
+};
+
 // 发布应用
 export function releaseApp(appId: string, release = false) {
   return defHttp.post({
@@ -53,7 +75,7 @@ export function releaseApp(appId: string, release = false) {
       id: appId,
       release: release,
     }
-  }, {joinParamsToUrl: true});
+  }, {joinParamsToUrl: true, isTransformResponse: false});
 }
 
 /**
@@ -85,6 +107,14 @@ export const queryFlowById = (params) => {
 };
 
 /**
+ * 根据应用id查询流程
+ * @param params
+ */
+export const queryFlowByIds = (params) => {
+  return defHttp.get({ url: Api.queryFlowByIds, params }, { isTransformResponse: false });
+};
+
+/**
  * 应用编排
  * @param params
  */
@@ -95,6 +125,24 @@ export const promptGenerate = (params) => {
       adapter: 'fetch',
       responseType: 'stream',
       timeout: 5 * 60 * 1000,
+    },
+    {
+      isTransformResponse: false,
+    }
+  );
+};
+
+/**
+ * 应用编排
+ * @param params
+ */
+export const generateMemoryByAppId = (params) => {
+  return defHttp.post(
+    {
+      url: Api.generateMemoryByAppId+'?variables='+ params.variables + '&memoryId='+ params.memoryId,
+      adapter: 'fetch',
+      responseType: 'stream',
+      timeout: 60 * 60 * 1000,
     },
     {
       isTransformResponse: false,

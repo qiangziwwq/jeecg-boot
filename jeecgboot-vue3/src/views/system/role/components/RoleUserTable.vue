@@ -38,7 +38,7 @@
   import UserDrawer from '../../user/UserDrawer.vue';
   import UseSelectModal from './UseSelectModal.vue';
   import { userList, deleteUserRole, batchDeleteUserRole, addUserRole } from '../role.api';
-  import { userColumns, searchUserFormSchema } from '../role.data';
+  import { userColumns, roleUserSearchFormSchema } from '../role.data';
   import { getUserRoles } from '../../user/user.api';
 
   const emit = defineEmits(['register', 'hideUserList']);
@@ -62,10 +62,9 @@
     api: userList,
     columns: userColumns,
     formConfig: {
-      //update-begin---author:wangshuai ---date:20230703  for：【QQYUN-5685】3、租户角色下,查询居左显示
+      // 代码逻辑说明: 【QQYUN-5685】3、租户角色下,查询居左显示
       labelWidth: 60,
-      //update-end---author:wangshuai ---date:20230703  for：【QQYUN-5685】3、租户角色下,查询居左显示
-      schemas: searchUserFormSchema,
+      schemas: roleUserSearchFormSchema,
       autoSubmitOnEnter: true,
     },
     striped: true,
@@ -145,10 +144,9 @@
    */
   async function batchHandleDelete() {
     await batchDeleteUserRole({ userIds: checkedKeys.value.join(','), roleId: roleId.value }, () => {
-      // update-begin--author:liaozhiyang---date:20240701---for：【TV360X-1655】批量取消关联之后清空选中记录
+      // 代码逻辑说明: 【TV360X-1655】批量取消关联之后清空选中记录
       reload();
       checkedKeys.value = [];
-      // update-end--author:liaozhiyang---date:20240701---for：【TV360X-1655】批量取消关联之后清空选中记录
     });
   }
 

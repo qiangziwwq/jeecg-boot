@@ -9,23 +9,22 @@ export const columns: BasicColumn[] = [
   //   align: 'left',
   // },
   {
-    title: '职务名称',
+    title: '职务等级',
     dataIndex: 'name',
     align: 'left'
     // width: 200,
   },
-  // {
-  //   title: '职务等级',
-  //   dataIndex: 'postRank_dictText',
-  //   width: 100,
-  // },
+  {
+    title: '等级序号（数字越小，职级越高）',
+    dataIndex: 'postLevel',
+  },
 ];
 
 export const searchFormSchema: FormSchema[] = [
   {
     field: 'name',
-    label: '职务名称',
-    component: 'Input',
+    label: '职务等级',
+    component: 'JInput',
     colProps: { span: 8 },
   },
 ];
@@ -37,24 +36,27 @@ export const formSchema: FormSchema[] = [
     component: 'Input',
     show: false,
   },
-  // {
-  //   label: '职级',
-  //   field: 'postRank',
-  //   component: 'JDictSelectTag',
-  //   required: true,
-  //   componentProps: {
-  //     dictCode: 'position_rank',
-  //     dropdownStyle: {
-  //       maxHeight: '100vh',
-  //     },
-  //     getPopupContainer: () => document.body,
-  //   },
-  // },
   {
     field: 'name',
-    label: '职务名称',
+    label: '职务等级',
     component: 'Input',
     required: true,
+  },
+  {
+    label: '等级序号',
+    field: 'postLevel',
+    component: 'InputNumber',
+    required: true,
+    componentProps: {
+      min: 1,
+      max: 99
+    },
+    itemProps: {
+      extra: '数字越小，职级越高；流程仅识别 1—6 级预设职级，其他等级不能用于流程职级表达式。',
+    },
+    dynamicRules: ({ model, schema }) => {
+      return [{ required: true, message: '请输入等级序号!' }];
+    },
   },
   // {
   //   field: 'code',

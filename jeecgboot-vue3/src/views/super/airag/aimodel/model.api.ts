@@ -8,6 +8,7 @@ enum Api {
   delete = '/airag/airagModel/delete',
   queryById = '/airag/airagModel/queryById',
   edit = '/airag/airagModel/edit',
+  copy = '/airag/airagModel/copy',
 }
 
 /**
@@ -45,12 +46,23 @@ export const editModel = (params) => {
 };
 
 /**
+ * 复制AI模型
+ *
+ * @param id
+ * @author scott
+ * @since 2026-08-06 LHZP-1552 AI模型配置增加复制功能
+ */
+export const copyModel = (id) => {
+  return defHttp.post({ url: `${Api.copy}/${id}` });
+};
+
+/**
  * 测试链接
  *
  * @param params
  */
 export const testConn = (params) => {
-  return defHttp.post({ url: Api.testConn, params });
+  return defHttp.post({ url: Api.testConn, params, timeout: 2*60*1000 });
 };
 
 /**

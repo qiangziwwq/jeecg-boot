@@ -108,7 +108,11 @@
     <h2 class="rich_media_title">${data.titile}</h2>
     <div class="meta_content">
         <#if data.priority??>
-            <span class="rich_media_meta priority ${data.priority}">
+            <#assign priClass = "">
+            <#if data.priority == "H" || data.priority == "M" || data.priority == "L">
+                <#assign priClass = data.priority>
+            </#if>
+            <span class="rich_media_meta priority ${priClass}">
                 <#if data.priority == "H">
                     高
                 <#elseif data.priority == "M">
@@ -116,7 +120,7 @@
                 <#elseif data.priority == "L">
                     低
                 <#else >
-                    ${data.priority}
+                    未知
                 </#if>
             </span>
         </#if>
@@ -125,6 +129,9 @@
         </#if>
         <#if data.sendTime??>
         <span class="rich_media_meta text">${data.sendTime?string('yyyy年MM月dd日')}</span>
+        </#if>
+        <#if data.visitsNum??>
+            <span class="rich_media_meta text">访问量:${data.visitsNum}</span>
         </#if>
     </div>
 </div>
@@ -154,6 +161,15 @@
         iframe.src = iframe.getAttribute('src');
     });
     //update-end-author:liusq---date:2023-10-30--for: 【QQYUN-6802】查看公告详情，此段端渲染有问题
+
+    // 监听父窗口发来的消息
+    window.addEventListener('message', (event) => {
+        // 1. 验证消息结构
+        let { type,printSessionId } = event.data
+        if(type == "action:print" && printSessionId ){
+            window.print();
+        }
+    });
 </script>
 </body>
 </html>

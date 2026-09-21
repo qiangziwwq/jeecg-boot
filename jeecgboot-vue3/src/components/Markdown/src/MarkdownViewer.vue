@@ -1,10 +1,8 @@
 <template>
   <!-- <div v-html="getHtmlData" :class="$props.class" class="markdown-viewer markdown-body"></div> -->
-  <!-- update-begin--author:liaozhiyang---date:20231201---for：【issues/872】MarkdownViewer组件无样式 -->
   <div class="preview" :class="[{ preview_dark: isDarkTheme }]">
     <div v-html="getHtmlData" :class="$props.class" class="markdown-viewer vditor-reset"></div>
   </div>
-  <!-- update-begin--author:liaozhiyang---date:20231201---for：【issues/872】MarkdownViewer组件无样式 -->
 </template>
 
 <script lang="ts" setup>
@@ -13,6 +11,7 @@
   import 'vditor/dist/index.css';
   import { useRootSetting } from '/@/hooks/setting/useRootSetting';
   import { ThemeEnum } from '/@/enums/appEnum';
+  import { sanitizeRichText } from '/@/utils/htmlSanitizer';
   
   const converter = new showdown.Converter();
   converter.setOption('tables', true);
@@ -21,9 +20,9 @@
     value: { type: String },
     class: { type: String },
   });
-  const getHtmlData = computed(() => converter.makeHtml(props.value || ''));
+  const getHtmlData = computed(() => sanitizeRichText(converter.makeHtml(props.value || '')));
 
-  // update-begin--author:liaozhiyang---date:20231213---for：【issues/918】MarkdownViewer加上暗黑主题
+  // 代码逻辑说明: 【issues/918】MarkdownViewer加上暗黑主题
   const isDarkTheme = ref(false);
   const { getDarkMode } = useRootSetting();
   watch(
@@ -33,7 +32,6 @@
     },
     { immediate: true }
   );
-  // update-end--author:liaozhiyang---date:20231213---for：【issues/918】MarkdownViewer加上暗黑主题
 </script>
 
 <style lang="less" scoped>

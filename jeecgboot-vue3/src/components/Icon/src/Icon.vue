@@ -6,11 +6,13 @@
   import type { PropType } from 'vue';
   import { defineComponent, ref, watch, onMounted, nextTick, unref, computed, CSSProperties } from 'vue';
   import SvgIcon from './SvgIcon.vue';
-  import Iconify from '@purge-icons/generated';
   import { isString } from '/@/utils/is';
   import { propTypes } from '/@/utils/propTypes';
-
   const SVG_END_WITH_FLAG = '|svg';
+  // update-begin--author:liaozhiyang---date:20260713---for：【LHZP-143】online新增字段图标会闪烁
+  // 缓存Iconify实例，避免每次动态import造成图标插入延迟（闪烁）
+  let iconifyInstance: any = null;
+  // update-end--author:liaozhiyang---date:20260713---for：【LHZP-143】online新增字段图标会闪烁
   export default defineComponent({
     name: 'Icon',
     components: { SvgIcon },
@@ -43,18 +45,39 @@
         await nextTick();
         const icon = unref(getIconRef);
         if (!icon) return;
-
-        const svg = Iconify.renderSVG(icon, {});
-        if (svg) {
-          el.textContent = '';
-          el.appendChild(svg);
-        } else {
-          const span = document.createElement('span');
-          span.className = 'iconify';
-          span.dataset.icon = icon;
-          el.textContent = '';
-          el.appendChild(span);
+        // update-begin--author:liaozhiyang---date:20260304---for:【QQYUN-14802】新增unplugin-icons插件，及icon支持online和local两种模式
+        try {
+          let svg: SVGElement | null = null;
+          // update-begin--author:liaozhiyang---date:20260713---for：【LHZP-143】online新增字段图标会闪烁
+          if (iconifyInstance) {
+            svg = iconifyInstance.renderSVG(icon, {});
+          } else if (import.meta.env.VITE_GLOB_ICONIFY_USE_TYPE === 'local') {
+            // 使用本地 purge-icons 图标（离线，图标已打包进产物）
+            const iconifyModule = await import('@purge-icons/generated');
+            iconifyInstance = iconifyModule.default;
+            svg = iconifyInstance.renderSVG(icon, {});
+          } else {
+            // 使用 @iconify/iconify 在线按需加载
+            const iconifyModule = await import('@iconify/iconify');
+            iconifyInstance = iconifyModule.default;
+            svg = iconifyInstance.renderSVG(icon, {});
+          }
+          // update-end--author:liaozhiyang---date:20260713---for：【LHZP-143】online新增字段图标会闪烁
+          if (svg) {
+            el.textContent = '';
+            el.appendChild(svg);
+          } else {
+            // 如果图标不存在，显示占位符
+            const span = document.createElement('span');
+            span.className = 'iconify';
+            span.dataset.icon = icon;
+            el.textContent = '';
+            el.appendChild(span);
+          }
+        } catch (err) {
+          console.error('Failed to render icon:', icon, err);
         }
+        // update-end--author:liaozhiyang---date:20260304---for:【QQYUN-14802】新增unplugin-icons插件，及icon支持online和local两种模式
       };
 
       const getWrapStyle = computed((): CSSProperties => {

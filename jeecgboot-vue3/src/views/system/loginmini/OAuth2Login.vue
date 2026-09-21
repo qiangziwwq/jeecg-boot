@@ -17,7 +17,7 @@
   import { OAUTH2_THIRD_LOGIN_TENANT_ID } from "/@/enums/cacheEnum";
 
   const isOAuth = ref<boolean>(isOAuth2AppEnv());
-  const env = ref<any>({ thirdApp: false, wxWork: false, dingtalk: false });
+  const env = ref<any>({ thirdApp: false, wxWork: false, dingtalk: false, feishu: false });
   const { currentRoute } = useRouter();
   const route = currentRoute.value;
   if (!isOAuth2AppEnv()) {
@@ -42,6 +42,11 @@
       env.value.thirdApp = true;
       env.value.dingtalk = true;
     }
+    // 判断当前是否是飞书环境
+    if (/lark|feishu/i.test(navigator.userAgent)) {
+      env.value.thirdApp = true;
+      env.value.feishu = true;
+    }
     doOAuth2Login();
   }
 
@@ -60,6 +65,8 @@
       } else if (env.value.dingtalk) {
         //新版钉钉登录
         dingdingLogin();
+      } else if (env.value.feishu) {
+        sysOAuth2Login('feishu');
       }
     }
   }
@@ -96,9 +103,8 @@
     //先获取钉钉的企业id，如果没有配置 还是走原来的逻辑，走原来的逻辑 需要判断存不存在token，存在token直接去首页
     let tenantId = getAuthCache(OAUTH2_THIRD_LOGIN_TENANT_ID) || 0;
     let url = `/sys/thirdLogin/get/corpId/clientId?tenantId=${tenantId}`;
-    //update-begin---author:wangshuai---date:2024-12-09---for:不要使用getAction online里面的，要用defHttp---
+    // 代码逻辑说明: 不要使用getAction online里面的，要用defHttp---
     defHttp.get({ url:url },{ isTransformResponse: false }).then((res) => {
-    //update-end---author:wangshuai---date:2024-12-09---for:不要使用getAction online里面的，要用defHttp---
         if (res.success) {
           if(res.result && res.result.corpId && res.result.clientId){
             requestAuthCode({ corpId: res.result.corpId, clientId: res.result.clientId }).then((res) => {

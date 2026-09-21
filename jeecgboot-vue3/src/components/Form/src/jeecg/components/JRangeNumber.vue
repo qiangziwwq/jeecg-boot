@@ -39,10 +39,9 @@
 
       function emitArray() {
         let arr = [];
-        // update-begin--author:liaozhiyang---date:20240704---for：【TV360X-1749】数量0输入不了，输入清空了
+        // 代码逻辑说明: 【TV360X-1749】数量0输入不了，输入清空了
         let begin = beginValue.value ?? '';
         let end = endValue.value ?? '';
-        // update-end--author:liaozhiyang---date:20240704---for：【TV360X-1749】数量0输入不了，输入清空了
         arr.push(begin);
         arr.push(end);
         emit('change', arr);
@@ -53,9 +52,13 @@
       watch(
         () => props.value,
         (val) => {
-          if (val && val.length == 2) {
-            beginValue.value = val[0];
-            endValue.value = val[1];
+          let parseVal = val;
+          if (typeof val === 'string') {
+            parseVal = val.split(',');
+          }
+          if (Array.isArray(parseVal) && parseVal.length === 2) {
+            beginValue.value = parseVal[0];
+            endValue.value = parseVal[1];
           } else {
             beginValue.value = '';
             endValue.value = '';
@@ -75,7 +78,7 @@
 </script>
 
 <style lang="less" scoped>
-  // update-begin--author:liaozhiyang---date:20240607---for：【TV360X-214】范围查询控件没有根据配置格式化
+  // 代码逻辑说明: 【TV360X-214】范围查询控件没有根据配置格式化
   .ant-input-group {
     display: flex;
     .ant-input-number {
@@ -89,5 +92,4 @@
       }
     }
   }
-  // update-end--author:liaozhiyang---date:20240607---for：【TV360X-214】范围查询控件没有根据配置格式化
 </style>

@@ -98,11 +98,10 @@
         if (selectedRoleId.value) {
           params['roleId'] = selectedRoleId.value;
         }
-        //update-begin---author:wangshuai---date:2024-02-02---for:【QQYUN-8239】用户角色，添加用户 返回2页数据，实际只显示一页---
+        // 代码逻辑说明: 【QQYUN-8239】用户角色，添加用户 返回2页数据，实际只显示一页---
         if(props.excludeUserIdList && props.excludeUserIdList.length>0){
           params['excludeUserIdList'] = props.excludeUserIdList.join(",");
         }
-        //update-end---author:wangshuai---date:2024-02-02---for:【QQYUN-8239】用户角色，添加用户 返回2页数据，实际只显示一页---
         const data = await defHttp.get({ url, params }, { isTransformResponse: false });
         if (data.success) {
           const { records } = data.result;
@@ -127,11 +126,15 @@
       }
 
       const maxHeight = ref(300);
-      maxHeight.value = window.innerHeight - 300;
+      //update-begin---wangshuai---date:20260810  for：【LHZP-1106】审批角色 按角色添加人员 高度太大了------------
+      maxHeight.value = window.innerHeight - 500;
+      //update-end---wangshuai---date:20260810  for：【LHZP-1106】审批角色 按角色添加人员 高度太大了------------
       const containerStyle = computed(() => {
         return {
           'overflow-y': 'auto',
-          'max-height': maxHeight.value + 'px',
+          //update-begin---wangshuai---date:20260810  for：【LHZP-1106】审批角色 按角色添加人员 高度太大了------------
+          'max-height': (maxHeight.value >= 300 ? maxHeight.value : 300) + 'px',
+          //update-end---author:wangshuai ---date:20260810  for：【LHZP-1106】审批角色 按角色添加人员 高度太大了------------
         };
       });
 

@@ -15,7 +15,7 @@ import org.jeecg.modules.system.service.ISysGatewayRouteService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 
-import javax.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletRequest;
 import java.util.Arrays;
 import java.util.List;
 
@@ -34,6 +34,7 @@ public class SysGatewayRouteController extends JeecgController<SysGatewayRoute, 
 	@Autowired
 	private ISysGatewayRouteService sysGatewayRouteService;
 
+    @RequiresPermissions("system:gateway:updateAll")
     @PostMapping(value = "/updateAll")
     public Result<?> updateAll(@RequestBody JSONObject json) {
         sysGatewayRouteService.updateAll(json);

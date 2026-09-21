@@ -44,17 +44,20 @@
           </div>
           <div class="mt-6">
             <ul>
-              <li class="flex mr-14">
-                <span class="label">模型类型</span>
-                <span class="described">{{ item.modelType_dictText }}</span>
+              <li class="flex mr-14" style="align-items: center;">
+                <span class="label" style="flex-shrink: 0;">模型类型</span>
+                <span class="described" style="flex: 1; min-width: 0;">{{ item.modelType_dictText }}</span>
+                <a-tooltip v-if="!item.activateFlag" title="未激活模型暂无法被系统其他功能调用，激活后可正常使用。">
+                  <span class="no-activate">未激活</span>
+                </a-tooltip>
               </li>
-              <li class="flex mr-14 mt-6">
-                <span class="label">基础模型</span>
-                <span class="described">{{ item.modelName }}</span>
+              <li class="flex mr-14 mt-6" style="align-items: center;">
+                <span class="label" style="flex-shrink: 0;">基础模型</span>
+                <span class="described" style="flex: 1; min-width: 0;">{{ item.modelName }}</span>
               </li>
-              <li class="flex mr-14 mt-6">
-                <span class="label">创建者</span>
-                <span class="described">{{ item.createBy_dictText || item.createBy }}</span>
+              <li class="flex mr-14 mt-6" style="align-items: center;">
+                <span class="label" style="flex-shrink: 0;">创建者</span>
+                <span class="described" style="flex: 1; min-width: 0;">{{ item.createBy_dictText || item.createBy }}</span>
               </li>
             </ul>
           </div>
@@ -72,6 +75,12 @@
                     <Icon icon="ant-design:setting-outlined" size="16"></Icon>
                     <span class="ml-4">模型参数配置</span>
                   </a-menu-item>-->
+                  <a-menu-item key="copy" @click.prevent.stop="handleCopyClick(item)">
+                    <Icon icon="ant-design:copy-outlined" size="16"></Icon> 复制
+                  </a-menu-item>
+                  <a-menu-item v-if="item.activateFlag" key="deactivate" @click.prevent.stop="handleDeactivateClick(item)">
+                    <Icon icon="ant-design:stop-outlined" size="16"></Icon> 取消激活
+                  </a-menu-item>
                   <a-menu-item key="delete" @click.prevent.stop="handleDeleteClick(item)">
                     <Icon icon="ant-design:delete-outlined" size="16"></Icon> 删除
                   </a-menu-item>
@@ -105,7 +114,7 @@
   import { reactive, ref } from 'vue';
   import AiModelModal from './components/AiModelModal.vue';
   import { useModal } from '@/components/Modal';
-  import { deleteModel, list } from './model.api';
+  import { copyModel, deleteModel, list, editModel } from './model.api';
   import { imageList } from './model.data';
   import { Pagination } from 'ant-design-vue';
   import JInput from '@/components/Form/src/jeecg/components/JInput.vue';
@@ -130,7 +139,7 @@
       //当前页数
       const pageNo = ref<number>(1);
       //每页条数
-      const pageSize = ref<number>(10);
+      const pageSize = ref<number>(30);
       //总条数
       const total = ref<number>(0);
       //可选择的页数
@@ -226,6 +235,27 @@
       }
 
       /**
+       * 复制模型
+       * @param item
+       * @author scott
+       * @since 2026-08-06 LHZP-1552 AI模型配置增加复制功能
+       */
+      async function handleCopyClick(item) {
+        await copyModel(item.id);
+        pageNo.value = 1;
+        reload();
+      }
+
+      /**
+       * 取消激活模型
+       * @param item
+       */
+      async function handleDeactivateClick(item) {
+        await editModel({ id: item.id, activateFlag: 0 });
+        reload();
+      }
+
+      /**
        * 查询
        */
       function searchQuery() {
@@ -263,6 +293,8 @@
         handlePageChange,
         getImage,
         handleDeleteClick,
+        handleCopyClick,
+        handleDeactivateClick,
         searchQuery,
         searchReset,
         queryParam,
@@ -280,11 +312,21 @@
     height: calc(100vh - 115px);
     background: #f7f8fc;
     padding: 24px;
-    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+
+    .jeecg-basic-table-form-container {
+      flex-shrink: 0;
+    }
+
     .model-row {
-      max-height: calc(100% - 100px);
+      flex: 1;
+      min-height: 0;
       margin-top: 20px;
       overflow-y: auto;
+      align-content: flex-start;
+      align-items: flex-start;
       .model-header {
         position: relative;
         font-size: 14px;
@@ -292,6 +334,7 @@
           width: 32px;
           height: 32px;
           margin-right: 12px;
+          object-fit: contain;
         }
         .header-text {
           font-size: 16px;
@@ -305,6 +348,12 @@
         }
       }
     }
+
+    .list-footer {
+      flex-shrink: 0;
+      margin-top: 12px;
+      padding-top: 4px;
+    }
   }
 
   .label {
@@ -314,6 +363,17 @@
     color: #8a8f98;
     overflow-wrap: break-word;
   }
+  .no-activate{
+    font-size: 10px;
+    color: #ff4d4f;
+    border: 1px solid #ff4d4f;
+    border-radius: 10px;
+    padding: 0 6px;
+    height: 14px;
+    line-height: 12px;
+    margin-left: 6px;
+    align-self: center;
+  }
   .described {
     font-weight: 400;
     margin-left: 14px;
@@ -322,6 +382,7 @@
     white-space: nowrap;
     overflow: hidden;
     font-size: 12px;
+    flex: 1;
   }
 
   .flex {
@@ -372,7 +433,6 @@
   }
   .list-footer {
     text-align: right;
-    margin-top: 5px;
   }
   .jeecg-basic-table-form-container {
     padding: 0;

@@ -8,6 +8,7 @@ import org.jeecg.common.exception.JeecgBootException;
 import org.jeecg.common.system.vo.DynamicDataSourceModel;
 import org.jeecg.common.util.ReflectHelper;
 import org.jeecg.common.util.oConvertUtils;
+import org.jeecg.common.util.security.JdbcSecurityUtil;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 
@@ -42,7 +43,10 @@ public class DynamicDBUtil {
         if (oConvertUtils.isEmpty(url) || !url.toLowerCase().startsWith("jdbc:")) {
             throw new JeecgBootException("数据源URL配置格式不正确！");
         }
-        
+        // 纵深防御: 连接建立时二次校验 URL 和驱动安全性
+        JdbcSecurityUtil.validate(url);
+        JdbcSecurityUtil.validateDriver(driverClassName);
+
         String dbUser = dbSource.getDbUsername();
         String dbPassword = dbSource.getDbPassword();
         dataSource.setDriverClassName(driverClassName);
@@ -52,8 +56,10 @@ public class DynamicDBUtil {
         dataSource.setTestOnBorrow(false);
         dataSource.setTestOnReturn(false);
         dataSource.setBreakAfterAcquireFailure(true);
-        //设置超时时间60秒
-        dataSource.setLoginTimeout(60);
+        // TCP建连超时 3s，防止目标库不可达时连接线程挂住
+        dataSource.setConnectTimeout(3000);
+        // 登录超时 5s（原为60s，过长会导致线程被占住；不影响SQL执行阶段）
+        dataSource.setLoginTimeout(5);
         dataSource.setConnectionErrorRetryAttempts(0);
         dataSource.setUsername(dbUser);
         dataSource.setMaxWait(30000);

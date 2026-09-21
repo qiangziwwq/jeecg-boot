@@ -10,7 +10,6 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import io.swagger.v3.oas.annotations.Operation;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.lang.StringUtils;
 import org.apache.shiro.authz.annotation.RequiresPermissions;
 import org.apache.shiro.authz.annotation.RequiresRoles;
 import org.jeecg.common.api.vo.Result;
@@ -23,18 +22,23 @@ import org.jeecg.common.util.dynamic.db.DataSourceCachePool;
 import org.jeecg.common.util.oConvertUtils;
 import org.jeecg.common.util.security.JdbcSecurityUtil;
 import org.jeecg.config.mybatis.MybatisPlusSaasConfig;
+import org.jeecg.config.sign.annotation.SignatureCheck;
 import org.jeecg.modules.system.entity.SysDataSource;
 import org.jeecg.modules.system.service.ISysDataSourceService;
-import org.jeecg.modules.system.util.SecurityUtil;
+import org.jeecgframework.poi.excel.ExcelImportUtil;
+import org.jeecgframework.poi.excel.entity.ImportParams;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.ModelAndView;
+import org.springframework.web.multipart.MultipartFile;
+import org.springframework.web.multipart.MultipartHttpServletRequest;
 
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import javax.sql.DataSource;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 
 /**
  * @Description: 多数据源管理
@@ -82,6 +86,14 @@ public class SysDataSourceController extends JeecgController<SysDataSource, ISys
         return Result.ok(pageList);
     }
 
+    /**
+     * 下拉选项数据 (online报表使用)
+     * @param sysDataSource
+     * @param req
+     * @return
+     */
+    @SignatureCheck
+    @RequiresPermissions("online:report:add")
     @GetMapping(value = "/options")
     public Result<?> queryOptions(SysDataSource sysDataSource, HttpServletRequest req) {
         //------------------------------------------------------------------------------------------------
@@ -112,16 +124,17 @@ public class SysDataSourceController extends JeecgController<SysDataSource, ISys
      */
     @AutoLog(value = "多数据源管理-添加")
     @Operation(summary = "多数据源管理-添加")
+    @RequiresPermissions("system:datasource:add")
     @PostMapping(value = "/add")
     public Result<?> add(@RequestBody SysDataSource sysDataSource) {
-        //update-begin-author:taoyan date:2022-8-10 for: jdbc连接地址漏洞问题
+        // 代码逻辑说明: jdbc连接地址漏洞问题
         try {
             JdbcSecurityUtil.validate(sysDataSource.getDbUrl());
+            JdbcSecurityUtil.validateDriver(sysDataSource.getDbDriver());
         }catch (JeecgBootException e){
             log.error(e.toString());
             return Result.error("操作失败：" + e.getMessage());
         }
-        //update-end-author:taoyan date:2022-8-10 for: jdbc连接地址漏洞问题
         return sysDataSourceService.saveDataSource(sysDataSource);
     }
 
@@ -133,16 +146,17 @@ public class SysDataSourceController extends JeecgController<SysDataSource, ISys
      */
     @AutoLog(value = "多数据源管理-编辑")
     @Operation(summary = "多数据源管理-编辑")
+    @RequiresPermissions("system:datasource:edit")
     @RequestMapping(value = "/edit", method ={RequestMethod.PUT, RequestMethod.POST})
     public Result<?> edit(@RequestBody SysDataSource sysDataSource) {
-        //update-begin-author:taoyan date:2022-8-10 for: jdbc连接地址漏洞问题
+        // 代码逻辑说明: jdbc连接地址漏洞问题
         try {
             JdbcSecurityUtil.validate(sysDataSource.getDbUrl());
+            JdbcSecurityUtil.validateDriver(sysDataSource.getDbDriver());
         } catch (JeecgBootException e) {
             log.error(e.toString());
             return Result.error("操作失败：" + e.getMessage());
         }
-        //update-end-author:taoyan date:2022-8-10 for: jdbc连接地址漏洞问题
         return sysDataSourceService.editDataSource(sysDataSource);
     }
 
@@ -154,6 +168,7 @@ public class SysDataSourceController extends JeecgController<SysDataSource, ISys
      */
     @AutoLog(value = "多数据源管理-通过id删除")
     @Operation(summary = "多数据源管理-通过id删除")
+    @RequiresPermissions("system:datasource:delete")
     @DeleteMapping(value = "/delete")
     public Result<?> delete(@RequestParam(name = "id") String id) {
         return sysDataSourceService.deleteDataSource(id);
@@ -167,6 +182,7 @@ public class SysDataSourceController extends JeecgController<SysDataSource, ISys
      */
     @AutoLog(value = "多数据源管理-批量删除")
     @Operation(summary = "多数据源管理-批量删除")
+    @RequiresPermissions("system:datasource:delete")
     @DeleteMapping(value = "/deleteBatch")
     public Result<?> deleteBatch(@RequestParam(name = "ids") String ids) {
         List<String> idList = Arrays.asList(ids.split(","));
@@ -186,15 +202,11 @@ public class SysDataSourceController extends JeecgController<SysDataSource, ISys
      */
     @AutoLog(value = "多数据源管理-通过id查询")
     @Operation(summary = "多数据源管理-通过id查询")
+    @RequiresPermissions("system:datasource:list")
     @GetMapping(value = "/queryById")
-    public Result<?> queryById(@RequestParam(name = "id") String id) throws InterruptedException {
+    public Result<?> queryById(@RequestParam(name = "id") String id) {
         SysDataSource sysDataSource = sysDataSourceService.getById(id);
-        //密码解密
-        String dbPassword = sysDataSource.getDbPassword();
-        if(StringUtils.isNotBlank(dbPassword)){
-            String decodedStr = SecurityUtil.jiemi(dbPassword);
-            sysDataSource.setDbPassword(decodedStr);
-        }
+        // 出于安全考虑，不向前端返回数据库密码（密码字段已通过 @JsonProperty(WRITE_ONLY) 屏蔽序列化，编辑时密码留空表示不修改）
         return Result.ok(sysDataSource);
     }
 
@@ -204,6 +216,7 @@ public class SysDataSourceController extends JeecgController<SysDataSource, ISys
      * @param request
      * @param sysDataSource
      */
+    @RequiresPermissions("system:datasource:export")
     @RequestMapping(value = "/exportXls")
     public ModelAndView exportXls(HttpServletRequest request, SysDataSource sysDataSource) {
         //------------------------------------------------------------------------------------------------
@@ -222,9 +235,26 @@ public class SysDataSourceController extends JeecgController<SysDataSource, ISys
      * @param response
      * @return
      */
+    @RequiresPermissions("system:datasource:import")
     @RequestMapping(value = "/importExcel", method = RequestMethod.POST)
     public Result<?> importExcel(HttpServletRequest request, HttpServletResponse response) {
-        return super.importExcel(request, response, SysDataSource.class);
+        MultipartHttpServletRequest multipartRequest = (MultipartHttpServletRequest) request;
+        Map<String, MultipartFile> fileMap = multipartRequest.getFileMap();
+        for (Map.Entry<String, MultipartFile> entity : fileMap.entrySet()) {
+            MultipartFile file = entity.getValue();
+            ImportParams params = new ImportParams();
+            params.setTitleRows(2);
+            params.setHeadRows(1);
+            params.setNeedSave(true);
+            try {
+                List<SysDataSource> dataSources = ExcelImportUtil.importExcel(file.getInputStream(), SysDataSource.class, params);
+                return sysDataSourceService.importDataSources(dataSources);
+            } catch (Exception e) {
+                log.error("文件导入失败", e);
+                return Result.error("文件导入失败:" + e.getMessage());
+            }
+        }
+        return Result.error("文件导入失败！");
     }
 
 

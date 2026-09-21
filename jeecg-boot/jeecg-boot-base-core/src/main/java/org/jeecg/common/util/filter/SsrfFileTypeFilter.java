@@ -2,14 +2,24 @@ package org.jeecg.common.util.filter;
 
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
+import org.jeecg.common.exception.JeecgBootException;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.net.InetAddress;
+import java.net.URI;
+import java.net.URISyntaxException;
+import java.net.UnknownHostException;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Set;
+import java.util.regex.Pattern;
 
 /**
  * @Description: 校验文件敏感后缀
@@ -34,6 +44,7 @@ public class SsrfFileTypeFilter {
         FILE_TYPE_WHITE_LIST.add("bmp");
         FILE_TYPE_WHITE_LIST.add("svg");
         FILE_TYPE_WHITE_LIST.add("ico");
+        FILE_TYPE_WHITE_LIST.add("heic");
 
         //文本文件
         FILE_TYPE_WHITE_LIST.add("txt");
@@ -148,14 +159,13 @@ public class SsrfFileTypeFilter {
     public static void checkDownloadFileType(String filePath) throws IOException {
         //文件后缀
         String suffix = getFileTypeBySuffix(filePath);
-        log.info("suffix:{}", suffix);
+        log.debug(" 【文件下载校验】文件后缀 suffix: {}", suffix);
         boolean isAllowExtension = FILE_TYPE_WHITE_LIST.contains(suffix.toLowerCase());
         //是否允许下载的文件
         if (!isAllowExtension) {
-            throw new IOException("下载失败，存在非法文件类型：" + suffix);
+            throw new JeecgBootException("下载失败，存在非法文件类型：" + suffix);
         }
     }
-
 
     /**
      * 上传文件类型过滤
@@ -163,14 +173,28 @@ public class SsrfFileTypeFilter {
      * @param file
      */
     public static void checkUploadFileType(MultipartFile file) throws Exception {
-        //获取文件真是后缀
-        String suffix = getFileType(file);
-
-        log.info("suffix:{}", suffix);
+        checkUploadFileType(file, null);
+    }
+    
+    /**
+     * 上传文件类型过滤
+     *
+     * @param file
+     */
+    public static void checkUploadFileType(MultipartFile file, String customPath) throws Exception {
+        //1. 路径安全校验
+        validatePathSecurity(customPath);
+        //2. 校验文件后缀和头
+        String suffix = getFileType(file, customPath);
+        log.info("【文件上传校验】文件后缀 suffix: {}，customPath：{}", suffix, customPath);
         boolean isAllowExtension = FILE_TYPE_WHITE_LIST.contains(suffix.toLowerCase());
         //是否允许下载的文件
         if (!isAllowExtension) {
-            throw new Exception("上传失败，存在非法文件类型：" + suffix);
+            throw new JeecgBootException("上传失败，存在非法文件类型：" + suffix);
+        }
+        //3. SVG文件内容安全校验（issues/9693）
+        if ("svg".equalsIgnoreCase(suffix)) {
+            checkSvgSafety(file);
         }
     }
 
@@ -182,8 +206,8 @@ public class SsrfFileTypeFilter {
      * @throws Exception
      */
 
-    private static String getFileType(MultipartFile file) throws Exception {
-        //update-begin-author:liusq date:20230404 for: [issue/4672]方法造成的文件被占用，注释掉此方法tomcat就能自动清理掉临时文件
+    private static String getFileType(MultipartFile file, String customPath) throws Exception {
+        // 代码逻辑说明: [issue/4672]方法造成的文件被占用，注释掉此方法tomcat就能自动清理掉临时文件
         String fileExtendName = null;
         InputStream is = null;
         try {
@@ -195,14 +219,17 @@ public class SsrfFileTypeFilter {
             Iterator<String> keyIter = FILE_TYPE_MAP.keySet().iterator();
             while (keyIter.hasNext()) {
                 String key = keyIter.next();
-                // 验证前5个字符比较
-                if (key.toLowerCase().startsWith(fileTypeHex.toLowerCase().substring(0, 5))
-                        || fileTypeHex.toLowerCase().substring(0, 5).startsWith(key.toLowerCase())) {
+                //update-begin---author:lsq ---date:2026-05-26  for：修复SVG文件被误判为php的问题（<?xml与<?php前2.5字节相同，扩大比较长度到10位避免误判）-----------
+                // 验证前10个字符比较（5字节），避免<?xml与<?php因前5位hex相同而误判
+                int compareLen = Math.min(10, Math.min(key.length(), fileTypeHex.length()));
+                if (key.toLowerCase().startsWith(fileTypeHex.toLowerCase().substring(0, compareLen))
+                        || fileTypeHex.toLowerCase().substring(0, compareLen).startsWith(key.toLowerCase())) {
+                //update-end---author:lsq ---date:2026-05-26  for：修复SVG文件被误判为php的问题（<?xml与<?php前2.5字节相同，扩大比较长度到10位避免误判）-----------
                     fileExtendName = FILE_TYPE_MAP.get(key);
                     break;
                 }
             }
-            log.info("-----获取到的指定文件类型------"+fileExtendName);
+            log.debug("-----获取到的指定文件类型------"+fileExtendName);
             // 如果不是上述类型，则判断扩展名
             if (StringUtils.isBlank(fileExtendName)) {
                 String fileName = file.getOriginalFilename();
@@ -213,7 +240,6 @@ public class SsrfFileTypeFilter {
                 // 如果有扩展名，则返回扩展名
                 return getFileTypeBySuffix(fileName);
             }
-            log.info("-----最終的文件类型------"+fileExtendName);
             is.close();
             return fileExtendName;
         } catch (Exception e) {
@@ -224,7 +250,6 @@ public class SsrfFileTypeFilter {
                 is.close();
             }
         }
-        //update-end-author:liusq date:20230404 for: [issue/4672]方法造成的文件被占用，注释掉此方法tomcat就能自动清理掉临时文件
     }
 
     /**
@@ -248,4 +273,175 @@ public class SsrfFileTypeFilter {
         }
         return stringBuilder.toString();
     }
+
+    /**
+     * 路径安全校验
+     */
+    private static void validatePathSecurity(String customPath) throws JeecgBootException {
+        if (customPath == null || customPath.trim().isEmpty()) {
+            return;
+        }
+
+        // 统一分隔符为 /
+        String normalized = customPath.replace("\\", "/");
+
+        // 1. 防止路径遍历攻击
+        if (normalized.contains("..") || normalized.contains("~")) {
+            throw new JeecgBootException("上传业务路径包含非法字符！");
+        }
+
+        // 2. 限制路径深度
+        int depth = normalized.split("/").length;
+        if (depth > 5) {
+            throw new JeecgBootException("上传业务路径深度超出限制！");
+        }
+
+        // 3. 限制字符集（只允许字母、数字、下划线、横线、斜杠）
+        if (!normalized.matches("^[a-zA-Z0-9/_-]+$")) {
+            throw new JeecgBootException("上传业务路径包含非法字符！");
+        }
+    }
+
+    /**
+     * 校验文件路径安全性，防止路径遍历攻击
+     * @param filePath 文件路径
+     */
+    public static void checkPathTraversal(String filePath) {
+        if (StringUtils.isBlank(filePath)) {
+            return;
+        }
+        // 1. 防止路径遍历：不允许 ..
+        if (filePath.contains("..")) {
+            throw new JeecgBootException("文件路径包含非法字符");
+        }
+        // 2. 防止URL编码绕过：%2e = .
+        String fileLower = filePath.toLowerCase();
+        if (fileLower.contains("%2e")) {
+            throw new JeecgBootException("文件路径包含非法字符");
+        }
+    }
+
+    //update-begin---author:zhangdaihao ---date:2026-04-15  for：【issues/9553】修复二次SSRF漏洞，对HTTP下载URL进行安全校验-----------
+    /**
+     * 校验HTTP(S) URL，防止SSRF攻击（最小化拦截，只挡真正危险的目标）。
+     * 规则：
+     * 1. 仅允许 http / https 协议；
+     * 2. 解析主机IP，拒绝 loopback（127.x / ::1）和 link-local（169.254.x，含云元数据 169.254.169.254 / fe80:）；
+     * 注意：RFC1918 私网段（10/172.16/192.168）允许通过，兼容企业内网 MinIO/OSS/文件服务等合法用途。
+     *
+     * @param fileUrl HTTP(S) URL
+     */
+    public static void checkSsrfHttpUrl(String fileUrl) {
+        if (StringUtils.isBlank(fileUrl)) {
+            throw new JeecgBootException("非法URL：地址为空");
+        }
+        URI uri;
+        try {
+            uri = new URI(fileUrl);
+        } catch (URISyntaxException e) {
+            throw new JeecgBootException("非法URL：格式错误");
+        }
+        String scheme = uri.getScheme();
+        if (scheme == null || !(scheme.equalsIgnoreCase("http") || scheme.equalsIgnoreCase("https"))) {
+            throw new JeecgBootException("非法URL：仅允许 http / https 协议");
+        }
+        String host = uri.getHost();
+        if (StringUtils.isBlank(host)) {
+            throw new JeecgBootException("非法URL：主机名为空");
+        }
+        // 去掉 IPv6 的中括号
+        if (host.startsWith("[") && host.endsWith("]")) {
+            host = host.substring(1, host.length() - 1);
+        }
+        try {
+            for (InetAddress addr : InetAddress.getAllByName(host)) {
+                if (addr.isLoopbackAddress() || addr.isLinkLocalAddress()) {
+                    throw new JeecgBootException("非法URL：禁止访问本机或链路本地地址 " + addr.getHostAddress());
+                }
+            }
+        } catch (UnknownHostException e) {
+            throw new JeecgBootException("非法URL：主机名无法解析");
+        }
+    }
+    //update-end---author:zhangdaihao ---date:2026-04-15  for：【issues/9553】修复二次SSRF漏洞，对HTTP下载URL进行安全校验-----------
+
+    /**
+     * 批量校验文件路径安全性（逗号分隔的多个文件路径）
+     * @param files 逗号分隔的文件路径
+     */
+    public static void checkPathTraversalBatch(String files) {
+        if (StringUtils.isBlank(files)) {
+            return;
+        }
+        for (String file : files.split(",")) {
+            if (StringUtils.isNotBlank(file)) {
+                checkPathTraversal(file.trim());
+            }
+        }
+    }
+
+    /**
+     * SVG 危险标签黑名单（标签名统一小写比较）
+     */
+    private static final Set<String> SVG_DANGEROUS_TAGS = new HashSet<>(Arrays.asList(
+            "script", "foreignobject", "iframe", "object", "embed", "applet",
+            "form", "input", "textarea", "button", "select",
+            "link", "meta", "base", "import",
+            "handler", "set", "animate", "animatemotion", "animatetransform"
+    ));
+
+    /**
+     * SVG 危险属性正则：匹配事件属性（on*="..."）和 javascript: 协议
+     */
+    private static final Pattern SVG_EVENT_ATTR_PATTERN = Pattern.compile(
+            "\\bon\\w+\\s*=", Pattern.CASE_INSENSITIVE
+    );
+    private static final Pattern SVG_JS_PROTOCOL_PATTERN = Pattern.compile(
+            "javascript\\s*:", Pattern.CASE_INSENSITIVE
+    );
+    /**
+     * HTML entity 编码的 javascript 协议（&#106;avascript: 等变体）
+     */
+    private static final Pattern SVG_ENTITY_JS_PATTERN = Pattern.compile(
+            "&#\\d+;|&#x[0-9a-f]+;", Pattern.CASE_INSENSITIVE
+    );
+
+    /**
+     * 校验 SVG 文件内容是否安全，防止存储型 XSS（issues/9693）。
+     * 采用文本扫描方式检测危险标签、事件属性和 javascript: 协议。
+     *
+     * @param file 上传的 SVG 文件
+     */
+    private static void checkSvgSafety(MultipartFile file) throws Exception {
+        String originalContent;
+        try (InputStream is = file.getInputStream()) {
+            originalContent = new String(is.readAllBytes(), StandardCharsets.UTF_8);
+        }
+        String content = originalContent.toLowerCase();
+        // 检测危险标签
+        for (String tag : SVG_DANGEROUS_TAGS) {
+            if (content.contains("<" + tag + ">") || content.contains("<" + tag + " ")
+                    || content.contains("<" + tag + "/") || content.contains("<" + tag + "\t")
+                    || content.contains("<" + tag + "\n") || content.contains("<" + tag + "\r")) {
+                throw new JeecgBootException("上传失败，SVG文件包含不安全的标签：<" + tag + ">");
+            }
+        }
+        // 检测事件属性（onclick、onload、onerror、onbegin 等）
+        if (SVG_EVENT_ATTR_PATTERN.matcher(originalContent).find()) {
+            throw new JeecgBootException("上传失败，SVG文件包含不安全的事件属性");
+        }
+        // 检测 javascript: 协议
+        if (SVG_JS_PROTOCOL_PATTERN.matcher(originalContent).find()) {
+            throw new JeecgBootException("上传失败，SVG文件包含不安全的javascript协议");
+        }
+        // 检测 HTML entity 编码（防止 &#106;avascript: 等绕过）
+        if (SVG_ENTITY_JS_PATTERN.matcher(originalContent).find()) {
+            throw new JeecgBootException("上传失败，SVG文件包含不安全的编码内容");
+        }
+        // 检测 DOCTYPE/ENTITY 声明（防止 XML Bomb / Billion Laughs DoS 攻击）
+        if (content.contains("<!doctype") || content.contains("<!entity")) {
+            throw new JeecgBootException("上传失败，SVG文件包含不安全的DOCTYPE/ENTITY声明");
+        }
+    }
+
 }
